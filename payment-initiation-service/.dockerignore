@@ -1,0 +1,52 @@
+# Ignorar archivos y directorios innecesarios para el build de Docker
+
+# Build outputs
+build/
+.gradle/
+out/
+target/
+*.iml
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Test reports
+**/test-results/
+**/reports/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# AI documentation (no necesario en runtime)
+ai/
+
+# Checkstyle y SpotBugs configs (no necesario en runtime, pero sí para compilar)
+# Dejamos config/ porque lo necesitamos para el build
+

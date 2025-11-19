@@ -1,0 +1,9 @@
+<SubmitPaymentOrderRequest xmlns="http://legacy.bank/payments">
+  <externalId>EXT-123</externalId>
+  <debtorIban>EC12DEBTOR</debtorIban>
+  <creditorIban>EC98CREDITOR</creditorIban>
+  <amount>150.75</amount>
+  <currency>USD</currency>
+  <remittanceInfo>Factura 001-123</remittanceInfo>
+  <requestedExecutionDate>2025-10-31</requestedExecutionDate>
+</SubmitPaymentOrderRequest>

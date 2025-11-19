@@ -1,0 +1,27 @@
+# Generaciones de IA
+
+Esta carpeta almacena fragmentos relevantes de código generado por IA que fueron modificados o que sirven como referencia.
+
+## Propósito
+
+Se guardarán aquí:
+- Archivos OpenAPI generados inicialmente
+- Borradores de controladores generados por IA
+- Modelos de dominio iniciales
+- Configuraciones complejas generadas automáticamente
+
+Cada archivo debe incluir en su header:
+- Fecha de generación
+- Prompt usado (o referencia a prompts.md)
+- Qué se mantuvo del código original
+- Qué se modificó manualmente
+- Qué se descartó y por qué
+
+## Formato de Nombre de Archivo
+
+`[descripción]_[fecha].md` o `[descripción]_[fecha].[extensión]`
+
+Ejemplos:
+- `openapi_initial_draft_2024-12.md`
+- `PaymentOrderController_first_generation_2024-12.java`
+

@@ -1,0 +1,225 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.0'
+    id 'io.spring.dependency-management' version '1.1.4'
+    id 'org.openapi.generator' version '7.0.1'
+    id 'checkstyle'
+    id 'com.github.spotbugs' version '6.0.0'
+    id 'jacoco'
+}
+
+group = 'com.bank.paymentinitiation'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot Starters
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    
+    // H2 Database
+    runtimeOnly 'com.h2database:h2'
+    
+    // MapStruct
+    implementation "org.mapstruct:mapstruct:1.5.5.Final"
+    annotationProcessor "org.mapstruct:mapstruct-processor:1.5.5.Final"
+    
+    // Lombok
+    compileOnly "org.projectlombok:lombok:1.18.30"
+    annotationProcessor "org.projectlombok:lombok:1.18.30"
+    annotationProcessor "org.projectlombok:lombok-mapstruct-binding:0.2.0"
+    
+    // OpenAPI Generator dependencies
+    implementation "io.swagger.core.v3:swagger-annotations:2.2.21"
+    implementation "org.openapitools:jackson-databind-nullable:0.2.6"
+    implementation "jakarta.validation:jakarta.validation-api:3.0.2"
+    implementation "jakarta.annotation:jakarta.annotation-api:2.1.1"
+    
+    // Tests
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework:spring-webflux'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// JaCoCo configuration
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = false
+        html.required = true
+        html.outputLocation = layout.buildDirectory.dir('reports/jacoco/html')
+    }
+    
+    // Excluir clases generadas, entidades y DTOs de cobertura
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                '**/generated/**',
+                '**/PaymentInitiationServiceApplication.class',
+                '**/PaymentOrderEntity.class',
+                '**/PaymentOrderEntity$*.class',
+                '**/*MapperImpl.class',
+                '**/config/**',
+                '**/ApplicationConfig.class'
+            ])
+        }))
+    }
+}
+
+jacocoTestCoverageVerification {
+    dependsOn test
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.75  // Cobertura mínima del 75% (ajustable según necesidad)
+            }
+        }
+    }
+    
+    // Excluir las mismas clases de la verificación
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                '**/generated/**',
+                '**/PaymentInitiationServiceApplication.class',
+                '**/PaymentOrderEntity.class',
+                '**/PaymentOrderEntity$*.class',
+                '**/*MapperImpl.class',
+                '**/config/**',
+                '**/ApplicationConfig.class'
+            ])
+        }))
+    }
+}
+
+// OpenAPI Generator configuration
+openApiGenerate {
+    generatorName = 'spring'
+    inputSpec = "$rootDir/openapi/openapi.yaml"
+    outputDir = "$buildDir/generated"
+    apiPackage = 'com.bank.paymentinitiation.generated.api'
+    modelPackage = 'com.bank.paymentinitiation.generated.model'
+    invokerPackage = 'com.bank.paymentinitiation.generated.invoker'
+    configOptions = [
+        interfaceOnly: 'true',
+        useSpringBoot3: 'true',
+        useTags: 'true',
+        dateLibrary: 'java8',
+        serializationLibrary: 'jackson',
+        hideGenerationTimestamp: 'true'
+    ]
+}
+
+// Add generated sources to main source set
+sourceSets.main.java.srcDir("$buildDir/generated/src/main/java")
+
+// Make compileJava depend on openApiGenerate
+tasks.named('compileJava') {
+    dependsOn 'openApiGenerate'
+}
+
+// Checkstyle configuration
+checkstyle {
+    toolVersion = '10.12.5'
+    configFile = file("${rootProject.projectDir}/config/checkstyle/checkstyle.xml")
+    ignoreFailures = false
+    maxWarnings = 10  // Permitir algunos warnings en código propio (ajustable)
+}
+
+tasks.named('checkstyleMain') {
+    reports {
+        xml.required = false
+        html.required = true
+        html.outputLocation = file("$buildDir/reports/checkstyle/main.html")
+    }
+}
+
+tasks.named('checkstyleTest') {
+    reports {
+        xml.required = false
+        html.required = true
+        html.outputLocation = file("$buildDir/reports/checkstyle/test.html")
+    }
+}
+
+// SpotBugs configuration
+spotbugs {
+    toolVersion = '4.8.3'
+    ignoreFailures = false
+}
+
+// Configure SpotBugs tasks with high effort and confidence level
+tasks.named('spotbugsMain') {
+    effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+    reportLevel = com.github.spotbugs.snom.Confidence.valueOf('HIGH')
+    excludeFilter = file("${rootProject.projectDir}/config/spotbugs/exclude.xml")
+    reports {
+        html {
+            required = true
+            outputLocation = file("$buildDir/reports/spotbugs/main.html")
+        }
+        xml {
+            required = false
+        }
+    }
+}
+
+tasks.named('spotbugsTest') {
+    effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+    reportLevel = com.github.spotbugs.snom.Confidence.valueOf('HIGH')
+    excludeFilter = file("${rootProject.projectDir}/config/spotbugs/exclude.xml")
+    reports {
+        html {
+            required = true
+            outputLocation = file("$buildDir/reports/spotbugs/test.html")
+        }
+        xml {
+            required = false
+        }
+    }
+}
+
+// Configurar dependencias del task check
+// Nota: jacocoTestReport depende de test, así que no lo incluimos directamente en check
+// para evitar dependencias circulares. En su lugar, lo ejecutamos después de los tests.
+check {
+    dependsOn 'checkstyleMain'
+    dependsOn 'checkstyleTest'
+    dependsOn 'spotbugsMain'
+    dependsOn 'spotbugsTest'
+    dependsOn 'test'
+    dependsOn 'jacocoTestCoverageVerification'
+    finalizedBy 'jacocoTestReport'
+}
+
+// Task adicional para ejecutar todos los quality checks
+task qualityCheck {
+    description = 'Runs all quality checks: checkstyle, spotbugs, tests, and jacoco'
+    group = 'verification'
+    dependsOn 'check'
+    finalizedBy 'jacocoTestReport'
+}
+

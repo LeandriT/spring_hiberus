@@ -1,0 +1,734 @@
+BIAN PAYMENT INITIATION – CURSOR PRO PLAYBOOK (JAVA 21)
+
+======================================================
+SECCIÓN A – PASOS PARA IMPLEMENTAR EL CHALLENGE CON CURSOR
+======================================================
+
+Contexto rápido
+---------------
+- Dominio BIAN: Payment Initiation
+- BQ principal: PaymentOrder
+- Migración: SOAP → REST (BIAN-aligned)
+- Arquitectura: Hexagonal (Ports & Adapters)
+- Enfoque: Contract-First con OpenAPI 3.0
+- Stack:
+  - Java 21
+  - Spring Boot 3 (Spring MVC, NO WebFlux en runtime)
+  - H2 como base de datos
+  - Gradle (Groovy DSL)
+  - MapStruct para mapeos
+  - WebTestClient para tests de integración
+- Artefactos de soporte:
+  - WSDL legacy: PaymentOrderService.wsdl
+  - XML ejemplos: SubmitPaymentOrder / GetPaymentOrderStatus (request/response)
+  - Colección Postman: postman_collection.json (endpoints REST a validar)
+
+Los siguientes pasos están pensados para copiarlos en Cursor Pro por bloques y dejar que genere el código, mientras tú revisas, corriges y documentas el uso de IA en la carpeta ai/.
+
+
+PASO 0 – Crear proyecto base (Java 21 + Gradle + Spring MVC + H2)
+-----------------------------------------------------------------
+Prompt para Cursor:
+
+Crea un proyecto Spring Boot 3 con Java 21 usando Gradle (Groovy DSL):
+
+- Nombre del proyecto: payment-initiation-service
+- Group: com.bank.paymentinitiation
+- Paquete base: com.bank.paymentinitiation
+
+En build.gradle configura:
+- Plugins:
+  - id 'java'
+  - id 'org.springframework.boot' version '3.2.0'
+  - id 'io.spring.dependency-management' version '1.1.4'
+  - id 'org.openapi.generator' version '7.0.1'
+  - id 'checkstyle'
+  - id 'com.github.spotbugs' version '6.0.0'
+  - id 'jacoco'
+
+- Java 21:
+  - sourceCompatibility = JavaVersion.VERSION_21
+  - targetCompatibility = JavaVersion.VERSION_21
+
+- Dependencias principales:
+  - implementation 'org.springframework.boot:spring-boot-starter-web'           // Spring MVC
+  - implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+  - implementation 'org.springframework.boot:spring-boot-starter-validation'
+  - implementation 'org.springframework.boot:spring-boot-starter-actuator'
+  - runtimeOnly  'com.h2database:h2'
+  - MapStruct:
+    - implementation "org.mapstruct:mapstruct:1.5.5.Final"
+    - annotationProcessor "org.mapstruct:mapstruct-processor:1.5.5.Final"
+  - Lombok:
+    - compileOnly "org.projectlombok:lombok:1.18.30"
+    - annotationProcessor "org.projectlombok:lombok:1.18.30"
+    - annotationProcessor "org.projectlombok:lombok-mapstruct-binding:0.2.0"
+  - Tests:
+    - testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    - testImplementation 'org.springframework:spring-webflux'   // solo para WebTestClient
+
+Configura test { useJUnitPlatform() } y jacoco básico. Asegúrate de que ./gradlew clean build compila correctamente.
+
+
+PASO 1 – Carpeta de evidencias de IA
+------------------------------------
+Crea en la raíz del proyecto (junto a build.gradle):
+
+- ai/prompts.md      → lista de prompts usados (incluye los que uses con Cursor).
+- ai/decisions.md    → decisiones de diseño, correcciones manuales, trade-offs.
+- ai/generations/    → fragmentos relevantes generados por IA (por ejemplo openapi.yaml, controladores, etc.).
+
+Inicializa los .md con títulos y una pequeña descripción de cómo se documentará el uso de IA.
+
+
+PASO 2 – Analizar el WSDL y los XML legacy
+------------------------------------------
+Usa PaymentOrderService.wsdl, SubmitPaymentOrder*.xml y GetPaymentOrderStatus*.xml como entrada.
+
+Prompt sugerido para Cursor:
+
+Analiza el archivo PaymentOrderService.wsdl y los XML de ejemplo (SubmitPaymentOrderRequest/Response, GetPaymentOrderStatusRequest/Response) y dame:
+
+1) Operaciones SOAP disponibles relacionadas con órdenes de pago.
+2) Estructuras de datos principales (campos clave) de la orden de pago.
+3) Estados posibles de la orden de pago en el servicio legacy.
+4) Un mapeo de estos conceptos al Service Domain BIAN Payment Initiation y al BQ PaymentOrder.
+5) Qué campos podemos ignorar para el alcance mínimo del challenge.
+
+Resume y copia el resultado en ai/decisions.md.
+
+
+PASO 3 – Diseñar el contrato OpenAPI 3.0 (contract-first, alineado con Postman)
+-------------------------------------------------------------------------------
+Basándote en el análisis del WSDL y la colección postman_collection.json (endpoints):
+
+- POST http://localhost:8080/payment-initiation/payment-orders
+- GET  http://localhost:8080/payment-initiation/payment-orders/{id}
+- GET  http://localhost:8080/payment-initiation/payment-orders/{id}/status
+
+Prompt para Cursor:
+
+Genera un archivo openapi/openapi.yaml con OpenAPI 3.0 que defina:
+
+- servers:
+  - url: http://localhost:8080
+- paths:
+  - POST /payment-initiation/payment-orders
+    - operationId: initiatePaymentOrder
+    - requestBody con esquema InitiatePaymentOrderRequest con campos alineados a la colección Postman:
+      - externalReference
+      - debtorAccount { iban }
+      - creditorAccount { iban }
+      - instructedAmount { amount, currency }
+      - remittanceInformation
+      - requestedExecutionDate (date)
+    - responses:
+      - 201: InitiatePaymentOrderResponse
+      - 400, 500 en formato application/problem+json
+  - GET /payment-initiation/payment-orders/{id}
+    - operationId: retrievePaymentOrder
+    - 200: RetrievePaymentOrderResponse
+    - 404: ProblemDetail
+  - GET /payment-initiation/payment-orders/{id}/status
+    - operationId: retrievePaymentOrderStatus
+    - 200: PaymentOrderStatusResponse
+    - 404: ProblemDetail
+
+Define schemas:
+
+- InitiatePaymentOrderRequest
+- InitiatePaymentOrderResponse
+- RetrievePaymentOrderResponse
+- PaymentOrderStatusResponse
+- PaymentAmount (value/currency)
+- ProblemDetail (RFC 7807)
+
+Entregame el contenido completo de openapi/openapi.yaml listo para guardar.
+
+
+PASO 4 – Configurar OpenAPI Generator en Gradle
+-----------------------------------------------
+Prompt:
+
+En build.gradle, configura la tarea openApiGenerate:
+
+- generatorName = 'spring'
+- inputSpec   = "$rootDir/openapi/openapi.yaml"
+- outputDir   = "$buildDir/generated"
+- apiPackage  = 'com.bank.paymentinitiation.generated.api'
+- modelPackage = 'com.bank.paymentinitiation.generated.model'
+- invokerPackage = 'com.bank.paymentinitiation.generated.invoker'
+- configOptions:
+  - interfaceOnly = 'true'
+  - useSpringBoot3 = 'true'
+  - useTags = 'true'
+  - dateLibrary = 'java8'
+  - serializationLibrary = 'jackson'
+  - hideGenerationTimestamp = 'true'
+
+Añade la carpeta generada como source set:
+
+- sourceSets.main.java.srcDir("$buildDir/generated/src/main/java")
+
+Y haz que compileJava dependa de openApiGenerate.
+
+Comprueba que ./gradlew openApiGenerate && ./gradlew compileJava funciona sin errores.
+
+
+PASO 5 – Estructura de paquetes (Hexagonal)
+-------------------------------------------
+Prompt:
+
+Crea la siguiente estructura de paquetes bajo com.bank.paymentinitiation:
+
+- domain
+  - model
+  - port.in
+  - port.out
+  - exception
+  - service
+- application
+  - service
+  - mapper (opcional)
+- adapter.in.rest
+  - dto (los modelos generados van en generated.model, aquí solo wrappers si los necesitas)
+  - mapper
+- adapter.out.persistence
+  - entity
+  - jpa
+  - mapper
+  - PaymentOrderRepositoryAdapter
+- config
+
+Crea clases vacías (o interfaces) con javadoc describiendo su rol, sin meter aún mucha lógica.
+
+
+PASO 6 – Modelo de dominio BIAN (PaymentOrder)
+----------------------------------------------
+Prompt:
+
+En com.bank.paymentinitiation.domain.model crea:
+
+- Enum PaymentStatus con valores: INITIATED, PENDING, PROCESSED, COMPLETED, FAILED, CANCELLED.
+- Value object PaymentAmount (BigDecimal value, String currency) con factoría estática que valide que value > 0.
+- Value objects PayerReference, PayeeReference, ExternalReference (strings no vacíos).
+- Aggregate root PaymentOrder con campos:
+  - String paymentOrderReference
+  - ExternalReference externalReference
+  - PayerReference payerReference
+  - PayeeReference payeeReference
+  - PaymentAmount instructedAmount
+  - String remittanceInformation
+  - LocalDate requestedExecutionDate
+  - PaymentStatus status
+  - LocalDateTime createdAt
+  - LocalDateTime updatedAt
+
+Incluye métodos de dominio para:
+- validar el agregado (validate())
+- iniciar la orden (marcar INITIATED)
+- cambiar estado respetando una secuencia razonable (por ejemplo INITIATED → PENDING → PROCESSED → COMPLETED).
+
+No uses anotaciones de Spring en el dominio. Usa Lombok (@Value/@Builder) cuando tenga sentido.
+
+
+PASO 7 – Puertos de dominio (ports in/out) y servicios de aplicación
+--------------------------------------------------------------------
+Prompt:
+
+En domain.port.in crea interfaces:
+
+- InitiatePaymentOrderUseCase
+  - PaymentOrder initiate(PaymentOrder order);
+- RetrievePaymentOrderUseCase
+  - PaymentOrder retrieve(String paymentOrderReference);
+- RetrievePaymentOrderStatusUseCase
+  - PaymentStatus retrieveStatus(String paymentOrderReference);
+
+En domain.port.out crea:
+
+- PaymentOrderRepository
+  - PaymentOrder save(PaymentOrder order);
+  - Optional<PaymentOrder> findByReference(String paymentOrderReference);
+
+En application.service crea implementaciones de estos casos de uso que:
+- Inyectan PaymentOrderRepository (port out).
+- Aplican reglas de negocio básicas y delegan en el repositorio.
+- Lanzan excepciones de dominio (PaymentOrderNotFoundException, InvalidPaymentException) cuando aplique.
+
+
+PASO 8 – H2 + JPA (entidad y repositorio)
+-----------------------------------------
+Prompt:
+
+Configura application.yml para H2 en memoria:
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:paymentdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+En adapter.out.persistence.entity crea PaymentOrderEntity con campos equivalentes al dominio, usando @Entity y @Table. Usa UUID como id técnico y paymentOrderReference como identificador de negocio único.
+
+En adapter.out.persistence.jpa crea PaymentOrderJpaRepository extends JpaRepository<PaymentOrderEntity, UUID> con método:
+- Optional<PaymentOrderEntity> findByPaymentOrderReference(String paymentOrderReference);
+
+
+PASO 9 – MapStruct para mapeos (REST ↔ Dominio ↔ Entidad)
+----------------------------------------------------------
+Prompt:
+
+Configura MapStruct usando:
+
+- implementation "org.mapstruct:mapstruct:1.5.5.Final"
+- annotationProcessor "org.mapstruct:mapstruct-processor:1.5.5.Final"
+
+Crea en adapter.in.rest.mapper:
+
+- PaymentOrderRestMapper con métodos:
+  - PaymentOrder toDomain(InitiatePaymentOrderRequest request);
+  - InitiatePaymentOrderResponse toInitiateResponse(PaymentOrder domain);
+  - RetrievePaymentOrderResponse toRetrieveResponse(PaymentOrder domain);
+  - PaymentOrderStatusResponse toStatusResponse(PaymentOrder domain);
+
+Crea en adapter.out.persistence.mapper:
+
+- PaymentOrderPersistenceMapper con métodos:
+  - PaymentOrderEntity toEntity(PaymentOrder domain);
+  - PaymentOrder toDomain(PaymentOrderEntity entity);
+
+Usa @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR).
+
+
+PASO 10 – Adaptador REST (implementando interfaces generadas)
+-------------------------------------------------------------
+Prompt:
+
+Usando las interfaces generadas en com.bank.paymentinitiation.generated.api, crea PaymentInitiationController en adapter.in.rest que:
+
+- Implemente PaymentInitiationApi (o el nombre generado).
+- Inyecte los use cases y PaymentOrderRestMapper.
+- Para POST /payment-initiation/payment-orders:
+  - Reciba InitiatePaymentOrderRequest con @Valid.
+  - Mapee DTO → dominio, llame InitiatePaymentOrderUseCase, mapee dominio → InitiatePaymentOrderResponse.
+  - Devuelva ResponseEntity.status(HttpStatus.CREATED).body(response).
+- Para GET /payment-initiation/payment-orders/{id}:
+  - Llame RetrievePaymentOrderUseCase, mapee dominio → RetrievePaymentOrderResponse.
+  - Devuelva ResponseEntity.ok(response).
+- Para GET /payment-initiation/payment-orders/{id}/status:
+  - Llame RetrievePaymentOrderStatusUseCase, mapee dominio → PaymentOrderStatusResponse.
+  - Devuelva ResponseEntity.ok(response).
+
+
+PASO 11 – Manejo global de errores (RFC 7807)
+---------------------------------------------
+Prompt:
+
+Crea en adapter.in.rest un @RestControllerAdvice GlobalExceptionHandler que maneje:
+
+- PaymentOrderNotFoundException → 404 NOT FOUND, body ProblemDetail con title "Payment Order Not Found".
+- InvalidPaymentException → 400 BAD REQUEST, body ProblemDetail con title "Invalid Payment Order".
+- Exception genérica → 500 INTERNAL SERVER ERROR.
+
+Usa org.springframework.http.ProblemDetail (Spring 6+). Todos los errores deben tener content-type application/problem+json.
+
+
+PASO 12 – Tests unitarios (dominio, casos de uso, mappers)
+----------------------------------------------------------
+Prompt:
+
+Crea tests unitarios con JUnit 5 y AssertJ para:
+
+- Aggregate PaymentOrder (validaciones, cambios de estado, excepciones).
+- Servicios de aplicación (Initiate/Retrieve/Status):
+  - Mockean PaymentOrderRepository.
+  - Verifican que se llama save/findByReference y se manejan errores correctamente.
+- Mappers MapStruct (opcional pero recomendable):
+  - Verifican que los campos clave se mapean bien entre DTO ↔ Dominio y Dominio ↔ Entidad.
+
+
+PASO 13 – Tests de integración con WebTestClient (Spring MVC)
+--------------------------------------------------------------
+Prompt:
+
+Configura tests de integración:
+
+- Clase PaymentInitiationIntegrationTest con:
+  - @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+  - @AutoConfigureWebTestClient
+  - Inyección de WebTestClient.
+- Usar H2 real (la config por defecto).
+
+Escribe tests que cubran:
+
+1) POST /payment-initiation/payment-orders
+   - Envía un JSON válido alineado con la colección Postman.
+   - Espera .expectStatus().isCreated().
+   - Verifica contenido de InitiatePaymentOrderResponse (paymentOrderReference, status INITIATED, etc.).
+
+2) GET /payment-initiation/payment-orders/{id}
+   - Crea primero una orden (por repositorio o reusando el POST).
+   - Espera .expectStatus().isOk().
+   - Verifica que los campos coinciden.
+
+3) GET /payment-initiation/payment-orders/{id}/status
+   - Espera .expectStatus().isOk().
+   - Verifica paymentOrderStatus y lastUpdated.
+
+4) Casos de error (404, 400):
+   - GET con id inexistente → 404.
+   - POST con body inválido → 400.
+
+Asegúrate de que ./gradlew test pasa correctamente.
+
+
+PASO 14 – Calidad: JaCoCo, Checkstyle y SpotBugs
+-------------------------------------------------
+Prompt:
+
+En build.gradle:
+
+- Configura jacoco para generar reporte HTML y verificación de cobertura mínima (>= 80%).
+- Configura checkstyle apuntando a config/checkstyle/checkstyle.xml.
+- Configura spotbugs con nivel de severidad alto.
+- Asegúrate de que ./gradlew check ejecuta tests + jacocoTestCoverageVerification + checkstyle + spotbugs.
+
+No seas extremo con las reglas pero sí suficiente para que el código esté ordenado.
+
+
+PASO 15 – Docker y docker-compose
+---------------------------------
+Prompt:
+
+Crea un Dockerfile multi-stage para Gradle + Java 21:
+
+- Stage builder: eclipse-temurin:21-jdk-alpine, compila con ./gradlew clean build -x test.
+- Stage runtime: eclipse-temurin:21-jre-alpine, copia el JAR generado, expone puerto 8080, ENTRYPOINT java -jar app.jar.
+
+Crea docker-compose.yml con un servicio payment-initiation-service que:
+
+- build: .
+- ports: "8080:8080".
+
+No necesitas otro contenedor de DB porque H2 es embebido.
+
+
+PASO 16 – README y documentación de IA
+--------------------------------------
+Prompt:
+
+Crea README.md con:
+
+1) Descripción del proyecto (BIAN Payment Initiation / PaymentOrder, migración de SOAP a REST).
+2) Arquitectura hexagonal y estructura de paquetes.
+3) Stack técnico (Java 21, Spring Boot 3, H2, JPA, Gradle, MapStruct, OpenAPI, WebTestClient, JaCoCo, Checkstyle, SpotBugs, Docker).
+4) Cómo ejecutar:
+   - ./gradlew clean check
+   - ./gradlew bootRun
+   - docker compose up --build
+5) Cómo probar con Postman (referencia a postman_collection.json).
+6) Uso de IA (descripción de carpeta ai/, qué se ha documentado).
+
+
+
+======================================================
+SECCIÓN B – CURSOR RULES PARA EL PROYECTO (JAVA 21)
+======================================================
+
+# BIAN Payment Initiation – Java 21 Spring Boot Migration Rules
+
+## 1. Context
+
+You are an expert software architect specialized in banking systems with 10+ years in fintech, migrating legacy SOAP services to REST APIs aligned with BIAN standards.
+
+This project migrates a Payment Order SOAP service (PaymentOrderService.wsdl + XML samples) to a BIAN-compliant REST microservice, validated with the Postman collection (postman_collection.json).
+
+## 2. Project Specifications
+
+- BIAN Service Domain: Payment Initiation
+- Behavior Qualifier: PaymentOrder
+- Migration: SOAP (legacy) → REST (BIAN-aligned)
+- Architecture: Hexagonal (Ports & Adapters)
+- Approach: Contract-First using OpenAPI 3.0
+- Stack:
+  - Java 21
+  - Spring Boot 3 (Spring MVC, no reactive stack at runtime)
+  - H2 Database (in-memory for local/testing, optional file-based for Docker)
+  - Gradle (Groovy DSL)
+  - MapStruct
+  - WebTestClient for integration tests
+  - JaCoCo, Checkstyle, SpotBugs for quality gates
+
+Always keep domain code framework-agnostic and respect BIAN naming conventions.
+
+## 3. BIAN Alignment
+
+- Base path: /payment-initiation
+- Behavior Qualifier: PaymentOrder
+- Resource naming:
+  - PaymentOrder instance is the Control Record (CR).
+  - Use paymentOrderReference as the business identifier (similar to cr-reference-id).
+- Operations:
+  - Initiate → POST /payment-initiation/payment-orders
+  - Retrieve → GET  /payment-initiation/payment-orders/{id}
+  - Retrieve Status → GET /payment-initiation/payment-orders/{id}/status
+
+Map SOAP operations from PaymentOrderService.wsdl (SubmitPaymentOrder, GetPaymentOrderStatus, etc.) to these REST operations.
+
+## 4. API Design
+
+### Endpoint Structure
+
+- POST /payment-initiation/payment-orders
+- GET  /payment-initiation/payment-orders/{id}
+- GET  /payment-initiation/payment-orders/{id}/status
+
+### Request/Response Shapes
+
+Align the request body with the Postman collection and BIAN concepts, for example:
+
+InitiatePaymentOrderRequest:
+- externalReference
+- debtorAccount { iban }
+- creditorAccount { iban }
+- instructedAmount { amount, currency }
+- remittanceInformation
+- requestedExecutionDate
+
+Responses must include:
+- paymentOrderReference
+- paymentOrderStatus
+- payer/debtor and payee/creditor references or accounts
+- amount (value + currency)
+- timestamps (createdAt, updatedAt/lastUpdated)
+
+### HTTP Status Codes
+
+- 201 Created: successful POST initiate.
+- 200 OK: successful GET retrieve / status.
+- 400 Bad Request: validation errors, malformed requests.
+- 404 Not Found: missing payment order.
+- 500 Internal Server Error: unexpected errors.
+
+Produce errors in application/problem+json (RFC 7807) using Spring’s ProblemDetail.
+
+## 5. Hexagonal Architecture
+
+### Root package
+
+- com.bank.paymentinitiation
+
+### Package structure
+
+- com.bank.paymentinitiation.domain
+  - model        (PaymentOrder, PaymentAmount, PaymentStatus, value objects)
+  - port.in      (use case interfaces)
+  - port.out     (repository interfaces, external ports)
+  - exception    (domain exceptions)
+  - service      (domain-level services if needed)
+- com.bank.paymentinitiation.application
+  - service      (use case implementations)
+  - mapper       (optional)
+- com.bank.paymentinitiation.adapter.in.rest
+  - PaymentInitiationController (implements generated OpenAPI interfaces)
+  - mapper (MapStruct DTO ↔ domain)
+- com.bank.paymentinitiation.adapter.out.persistence
+  - entity       (JPA entities for H2)
+  - jpa          (Spring Data JPA repositories)
+  - mapper       (MapStruct domain ↔ entity)
+  - PaymentOrderRepositoryAdapter (implements domain port)
+- com.bank.paymentinitiation.config
+  - WebMvc, JPA, H2 console, security (if any)
+
+Rules:
+- Domain layer is pure Java, no Spring annotations.
+- Ports live in domain; adapters implement ports.
+- MapStruct only in adapter/application, never in domain.
+
+## 6. Contract-First OpenAPI
+
+- Source of truth: openapi/openapi.yaml.
+- Use org.openapi.generator Gradle plugin with generatorName "spring" and interfaceOnly = true.
+- Generated packages:
+  - com.bank.paymentinitiation.generated.api
+  - com.bank.paymentinitiation.generated.model
+- Controllers in adapter.in.rest must implement these generated interfaces, not define their own method signatures manually.
+
+OpenAPI must be consistent with:
+- WSDL and XML samples for fields and states.
+- Postman collection for endpoints and example payloads.
+
+## 7. Gradle Build (Java 21)
+
+Key points:
+- sourceCompatibility = JavaVersion.VERSION_21
+- targetCompatibility = JavaVersion.VERSION_21
+- Use spring-boot-starter-web (MVC), spring-boot-starter-data-jpa, spring-boot-starter-validation, spring-boot-starter-actuator.
+- runtimeOnly com.h2database:h2
+- WebTestClient is allowed via testImplementation "org.springframework:spring-webflux" (tests only).
+
+Quality gates:
+- JaCoCo with minimum 80% line coverage on main code (excluding generated DTOs/entities/MapperImpl classes).
+- Checkstyle with a reasonable config (Google/Sun style).
+- SpotBugs with high report level.
+
+The Gradle check task must run unit tests, integration tests, coverage verification, Checkstyle and SpotBugs.
+
+## 8. Spring Configuration (H2 + MVC)
+
+- Use application.yml to configure H2 in-memory for local/dev.
+- Enable H2 console at /h2-console for debugging.
+- Set JPA ddl-auto to update or create-drop for tests.
+- Configure Jackson to use ISO date/time, no timestamps.
+
+Ensure the application runs on port 8080 and matches the URLs in the Postman collection.
+
+## 9. Controller Rules (Spring MVC)
+
+PaymentInitiationController MUST:
+
+- Implement the interface generated from OpenAPI (e.g. PaymentInitiationApi).
+- Use @RestController, @RequiredArgsConstructor, @Slf4j.
+- Inject use cases (Initiate/Retrieve/Status) and PaymentOrderRestMapper.
+
+HTTP behavior:
+
+- POST initiatePaymentOrder:
+  - Validate request with @Valid.
+  - Map DTO → domain.
+  - Call InitiatePaymentOrderUseCase.
+  - Map domain → InitiatePaymentOrderResponse.
+  - Return ResponseEntity.status(HttpStatus.CREATED).body(response).
+
+- GET retrievePaymentOrder:
+  - Call RetrievePaymentOrderUseCase.
+  - Map domain → RetrievePaymentOrderResponse.
+  - Return ResponseEntity.ok(body).
+
+- GET retrievePaymentOrderStatus:
+  - Call RetrievePaymentOrderStatusUseCase.
+  - Map domain → PaymentOrderStatusResponse.
+  - Return ResponseEntity.ok(body).
+
+Never expose domain entities or JPA entities directly in REST responses. Always go through DTOs generated from OpenAPI + MapStruct mappers.
+
+## 10. Error Handling (RFC 7807)
+
+Implement GlobalExceptionHandler with @RestControllerAdvice that:
+
+- Maps PaymentOrderNotFoundException → 404 NOT FOUND with ProblemDetail:
+  - title = "Payment Order Not Found"
+  - status = 404
+  - detail = useful error message
+
+- Maps InvalidPaymentException → 400 BAD REQUEST with ProblemDetail:
+  - title = "Invalid Payment Order"
+  - status = 400
+  - detail = validation/business error description
+
+- Maps generic Exception → 500 Internal Server Error with ProblemDetail.
+
+All error responses must use application/problem+json and avoid exposing internal details (stack traces, SQL, etc.).
+
+## 11. Persistence Layer Rules (H2 + JPA)
+
+- Use H2 for persistence in local and tests.
+- Define PaymentOrderEntity with UUID primary key and paymentOrderReference as unique column.
+- Spring Data JPA repository with method findByPaymentOrderReference.
+- PaymentOrderRepositoryAdapter implementing domain port PaymentOrderRepository, using MapStruct PaymentOrderPersistenceMapper to convert between domain and entity.
+
+Domain layer must not depend on JPA or persistence annotations.
+
+## 12. MapStruct Usage
+
+Define three main mapper types:
+
+1. REST mapper (adapter.in.rest.mapper):
+   - DTO ↔ Domain.
+   - Responsible for translating REST-level semantics (BIAN JSON) into domain objects and vice versa.
+
+2. Persistence mapper (adapter.out.persistence.mapper):
+   - Domain ↔ Entity.
+   - Responsible for mapping business objects to relational persistence structures.
+
+3. Optional application-level mapper (application.mapper):
+   - For complex transformations inside use cases if needed.
+
+All mappers:
+- Use @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR).
+- Keep mapping logic declarative; avoid custom imperative logic in mappers unless absolutely required.
+
+## 13. Testing Strategy
+
+### Unit Tests
+
+- Domain:
+  - Cover PaymentOrder aggregate behavior, value objects, status transitions and invariants.
+- Application:
+  - Use cases with mocked PaymentOrderRepository.
+  - Verify business rules and error handling.
+
+### Integration Tests (WebTestClient + Spring MVC)
+
+- Use @SpringBootTest(webEnvironment = RANDOM_PORT) + @AutoConfigureWebTestClient.
+- Use real H2 configuration.
+- Cover:
+  - POST /payment-initiation/payment-orders → 201 Created with correct body.
+  - GET /payment-initiation/payment-orders/{id} → 200 OK.
+  - GET /payment-initiation/payment-orders/{id}/status → 200 OK.
+  - Error cases 404 and 400.
+
+Align test requests/responses with the Postman collection examples.
+
+### Repository Tests
+
+- Use @DataJpaTest for PaymentOrderJpaRepository and verify basic CRUD + custom queries (findByPaymentOrderReference).
+
+## 14. Docker & Runtime Rules
+
+- Use multi-stage Dockerfile with Java 21 (Temurin JDK/JRE).
+- Ensure the container runs the Spring Boot jar listening on port 8080.
+- Optionally add health check to /actuator/health.
+- In Docker profile, you may use H2 in file mode if persistence across restarts is needed.
+
+## 15. AI Usage Documentation (ai/ folder)
+
+For every significant use of AI (Cursor/ChatGPT):
+
+- Log the prompt and a short summary of the answer in ai/prompts.md.
+- Document architectural decisions, manual corrections, and final choices in ai/decisions.md.
+- Store key generated fragments (for example initial openapi.yaml or first controller draft) in ai/generations/, with a short comment in the header explaining what was kept and what was changed.
+
+All AI-generated code MUST be reviewed, adapted and tested before being considered production-ready.
+
+## 16. Final Checklist
+
+Before considering the challenge DONE, verify:
+
+- OpenAPI contract is the source of truth and matches Postman and WSDL semantics.
+- Hexagonal architecture is respected, with no Spring/framework dependencies in domain.
+- All REST endpoints return correct HTTP status codes (201, 200, 400, 404, 500).
+- Error responses follow RFC 7807 and use application/problem+json.
+- MapStruct mappers work correctly and are covered by tests where necessary.
+- Unit + integration + repository tests pass on Java 21.
+- ./gradlew clean check passes (JaCoCo coverage >= 80%, Checkstyle, SpotBugs).
+- H2 is configured and accessible; H2 console works in dev.
+- Docker image builds and the service starts correctly on port 8080.
+- AI usage is documented in ai/.
+- README.md explains setup, architecture, how to run, and how to test via Postman collection.
+
+If any of these checks fail, fix them before delivering the solution.

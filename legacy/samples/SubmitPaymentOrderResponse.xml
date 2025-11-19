@@ -1,0 +1,4 @@
+<SubmitPaymentOrderResponse xmlns="http://legacy.bank/payments">
+  <paymentOrderId>PO-0001</paymentOrderId>
+  <status>ACCEPTED</status>
+</SubmitPaymentOrderResponse>
