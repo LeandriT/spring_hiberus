@@ -1,10 +1,10 @@
 package com.bank.paymentinitiation.domain.model;
 
-import lombok.Builder;
-import lombok.Value;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+import lombok.Builder;
+import lombok.Value;
 
 /**
  * Aggregate root representing a Payment Order in the domain.

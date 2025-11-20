@@ -1,19 +1,18 @@
 package com.bank.paymentinitiation.adapter.out.persistence.mapper;
 
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.mapstruct.Named;
+import org.mapstruct.ReportingPolicy;
+
+import com.bank.paymentinitiation.adapter.out.persistence.entity.PaymentOrderEntity;
+import com.bank.paymentinitiation.adapter.out.persistence.entity.PaymentOrderStatusEntity;
 import com.bank.paymentinitiation.domain.model.ExternalReference;
 import com.bank.paymentinitiation.domain.model.PayeeReference;
 import com.bank.paymentinitiation.domain.model.PayerReference;
 import com.bank.paymentinitiation.domain.model.PaymentAmount;
 import com.bank.paymentinitiation.domain.model.PaymentOrder;
 import com.bank.paymentinitiation.domain.model.PaymentStatus;
-import com.bank.paymentinitiation.adapter.out.persistence.entity.PaymentOrderEntity;
-import com.bank.paymentinitiation.adapter.out.persistence.entity.PaymentOrderStatusEntity;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
-import org.mapstruct.Named;
-import org.mapstruct.ReportingPolicy;
-
-import java.time.LocalDateTime;
 
 /**
  * MapStruct mapper for converting between domain models and persistence entities.

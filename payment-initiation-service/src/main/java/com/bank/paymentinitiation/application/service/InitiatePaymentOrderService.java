@@ -2,12 +2,9 @@ package com.bank.paymentinitiation.application.service;
 
 import com.bank.paymentinitiation.domain.exception.InvalidPaymentException;
 import com.bank.paymentinitiation.domain.model.PaymentOrder;
-import com.bank.paymentinitiation.domain.model.PaymentStatus;
 import com.bank.paymentinitiation.domain.port.in.InitiatePaymentOrderUseCase;
 import com.bank.paymentinitiation.domain.port.out.PaymentOrderRepository;
 import com.bank.paymentinitiation.domain.service.PaymentOrderDomainService;
-
-import java.time.LocalDateTime;
 
 /**
  * Application service implementing the InitiatePaymentOrderUseCase.

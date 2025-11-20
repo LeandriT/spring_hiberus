@@ -9,17 +9,8 @@ exitosa del challenge. Incluye todas las correcciones y mejoras identificadas du
 desarrollo, incluyendo soluciones a problemas comunes con SpotBugs, MapStruct, Checkstyle, 
 JaCoCo y configuración de Docker.
 
-Versión: 1.2 (Refinada post-implementación con mejoras de Checkstyle)
-Última actualización: Diciembre 2024
-
-MEJORAS EN ESTA VERSIÓN:
-- ✅ Guía completa y detallada sobre orden de imports en Checkstyle (PASO 0 y PASO 14)
-- ✅ Ejemplos concretos de orden correcto e incorrecto de imports con código completo
-- ✅ Instrucciones mejoradas sobre manejo de logs completos (sin grep/tail)
-- ✅ Soluciones detalladas para errores comunes de ImportOrder con mensajes específicos
-- ✅ Verificación paso a paso antes de continuar al siguiente paso
-- ✅ Advertencias sobre IBANs en tests (deben cumplir minLength: 15 de OpenAPI)
-- ✅ Ejemplos actualizados en Postman collection con IBANs válidos
+Versión: 1.1 (Refinada post-implementación)
+Última actualización: Noviembre 2024
 
 ======================================================
 SECCIÓN A – PASOS PARA IMPLEMENTAR EL CHALLENGE CON CURSOR
@@ -138,62 +129,23 @@ Checkstyle (CONFIGURACIÓN OBLIGATORIA)
   </module>
   ```
 
-⚠️ CRÍTICO - Orden de Imports en Checkstyle:
-- El orden de imports DEBE ser exactamente: java.* → jakarta.* → org.* → com.*
-- Entre cada grupo debe haber UNA línea en blanco.
-- Los static imports van DENTRO del grupo org.*, después de los imports normales de org.* pero ANTES de com.*
-- Ejemplo CORRECTO:
-  ```java
-  package com.example;
-  
-  import java.math.BigDecimal;        // Grupo 1: java.*
-  import java.time.LocalDate;
-  
-  import jakarta.validation.Valid;    // Grupo 2: jakarta.*
-  
-  import org.springframework.web.bind.annotation.RestController;  // Grupo 3: org.* (normal)
-  import static org.assertj.core.api.Assertions.assertThat;       // Grupo 3: org.* (static)
-  import static org.mockito.Mockito.verify;                        // Grupo 3: org.* (static)
-  
-  import com.example.model.PaymentOrder;  // Grupo 4: com.*
-  
-  import lombok.RequiredArgsConstructor;   // Lombok debe estar separado, generalmente después de com.*
-  ```
-- Ejemplo INCORRECTO (causará error):
-  ```java
-  import jakarta.validation.Valid;
-  import org.springframework.web.bind.annotation.RestController;  // ❌ Falta línea en blanco
-  ```
-- Los static imports de lombok (si los hay) deben ir en el mismo grupo que otros static imports de org.*
-
 - ANTES de ejecutar el build completo, ejecuta:
     ./gradlew checkstyleMain --no-daemon
 
   IMPORTANTE (manejo de errores):
-  • NO uses tail, grep ni recortes de salida (NO uses "| tail -3" ni "| tail -10").
-  • Muestra el log COMPLETO del comando. Si es muy largo, muestra TODO y luego haz un resumen manual con:
-      - Tipo de error (ImportOrder, LineLength, etc.)
-      - Archivo y línea afectados
-      - Mensaje completo del error
-      - "Caused by" si existe
+  • NO uses tail, grep ni recortes de salida (NO uses “| tail -3” ni “| tail -10”).
+  • Muestra el log completo del comando o, como mínimo, suficiente contexto (varias decenas de líneas) para entender bien el error.
   • Si aparece un error en Checkstyle:
-      → Lee exactamente el mensaje del log (incluyendo "Caused by:", módulo afectado, archivo y línea).
-      → Errores comunes y soluciones:
-        * "Orden incorrecto para el import": Reordenar imports según grupos (java.* → jakarta.* → org.* → com.*)
-        * "Separación extra en el grupo": Eliminar líneas en blanco innecesarias dentro de un grupo
-        * "debería separarse de los import previos": Agregar línea en blanco entre grupos (ej: entre jakarta.* y lombok)
-      → Identifica la causa real (ruta incorrecta, error DTD, módulo mal definido, regla inválida, propiedad inexistente, orden de imports, etc.).
-      → Corrige la configuración modificando SOLO los archivos necesarios:
+      → Lee exactamente el mensaje del log (incluyendo “Caused by:”, módulo afectado, archivo y línea).
+      → Identifica la causa real (ruta incorrecta, error DTD, módulo mal definido, regla inválida, propiedad inexistente, etc.).
+      → Corrige la configuración modificando SOLO los archivos:
             - build.gradle
             - config/checkstyle/checkstyle.xml
             - config/checkstyle/suppressions.xml
-            - Archivos Java afectados (para errores de ImportOrder)
       → Vuelve a ejecutar:
             ./gradlew checkstyleMain --no-daemon
-        y luego:
-            ./gradlew checkstyleTest --no-daemon
-        hasta que ambos pasen sin errores.
-  • Nunca elimines el plugin de Checkstyle ni ignores los errores: siempre corrige la configuración según el log completo.
+        hasta que pase sin errores.
+  • Nunca elimines el plugin de Checkstyle ni ignores los errores: siempre corrige la configuración según el log.
 
 --------------------------------------------------
 ⚠️ IMPORTANTE - SpotBugs
@@ -894,27 +846,24 @@ TESTS A IMPLEMENTAR
 
 Enviar JSON basado en Postman:
 
-⚠️ IMPORTANTE - IBANs en tests:
-Los IBANs en los payloads DEBEN cumplir con `minLength: 15` definido en OpenAPI.
-Ejemplo CORRECTO (al menos 15 caracteres):
 {
-"externalReference": "EXT-1",
-"debtorAccount": { "iban": "EC123456789012345678" },
-"creditorAccount": { "iban": "EC987654321098765432" },
-"instructedAmount": { "amount": 150.75, "currency": "USD" },
-"remittanceInformation": "Factura 001-123",
-"requestedExecutionDate": "2025-10-31"
+“externalReference”: “EXT-1”,
+“debtorAccount”: { “iban”: “EC12DEBTOR” },
+“creditorAccount”: { “iban”: “EC98CREDITOR” },
+“instructedAmount”: { “amount”: 150.75, “currency”: “USD” },
+“remittanceInformation”: “Factura 001-123”,
+“requestedExecutionDate”: “2025-10-31”
 }
 
 Verificaciones:
 	•	.expectStatus().isCreated()
-	•	jsonPath("$.paymentOrderReference").exists()
-	•	jsonPath("$.paymentOrderStatus").isEqualTo("INITIATED")
-	•	jsonPath("$.debtorAccount.iban").isEqualTo("EC123456789012345678")
-	•	jsonPath("$.creditorAccount.iban").isEqualTo("EC987654321098765432")
-	•	jsonPath("$.instructedAmount.amount").isEqualTo(150.75)
-	•	jsonPath("$.instructedAmount.currency").isEqualTo("USD")
-	•	jsonPath("$.createdAt").exists()
+	•	jsonPath(”$.paymentOrderReference”).exists()
+	•	jsonPath(”$.paymentOrderStatus”).isEqualTo(“INITIATED”)
+	•	jsonPath(”$.debtorAccount.iban”).isEqualTo(“EC12DEBTOR”)
+	•	jsonPath(”$.creditorAccount.iban”).isEqualTo(“EC98CREDITOR”)
+	•	jsonPath(”$.instructedAmount.amount”).isEqualTo(150.75)
+	•	jsonPath(”$.instructedAmount.currency”).isEqualTo(“USD”)
+	•	jsonPath(”$.createdAt”).exists()
 
 2) GET /payment-initiation/payment-orders/{id} – Recuperación COMPLETA
 
@@ -924,14 +873,14 @@ Flujo:
 
 Verificaciones:
 	•	.expectStatus().isOk()
-	•	jsonPath("$.paymentOrderReference") == ID creado
-	•	jsonPath("$.externalReference") correcto
-	•	jsonPath("$.debtorAccount.iban").isEqualTo("EC123456789012345678")
-	•	jsonPath("$.creditorAccount.iban").isEqualTo("EC987654321098765432")
-	•	jsonPath("$.instructedAmount.amount").isEqualTo(150.75)
-	•	jsonPath("$.requestedExecutionDate") existe
-	•	jsonPath("$.createdAt").exists()
-	•	jsonPath("$.lastUpdated").exists()
+	•	jsonPath(”$.paymentOrderReference”) == ID creado
+	•	jsonPath(”$.externalReference”) correcto
+	•	jsonPath(”$.debtorAccount.iban”).isEqualTo(“EC12DEBTOR”)
+	•	jsonPath(”$.creditorAccount.iban”).isEqualTo(“EC98CREDITOR”)
+	•	jsonPath(”$.instructedAmount.amount”).isEqualTo(150.75)
+	•	jsonPath(”$.requestedExecutionDate”) existe
+	•	jsonPath(”$.createdAt”).exists()
+	•	jsonPath(”$.lastUpdated”).exists()
 
 3) GET /payment-initiation/payment-orders/{id}/status – Solo estado
 
@@ -1044,18 +993,6 @@ En build.gradle:
   - Excluir código generado en checkstyle.xml usando BeforeExecutionExclusionFileFilter:
     - Patrón: "generated/.*"
     - Patrón: ".*MapperImpl\.java$"
-  - ⚠️ CRÍTICO - Configuración del ImportOrder en checkstyle.xml:
-    ```xml
-    <module name="ImportOrder">
-        <property name="groups" value="/^java\./,javax,jakarta,org,com"/>
-        <property name="ordered" value="true"/>
-        <property name="separated" value="true"/>
-    </module>
-    ```
-    - Los grupos están separados por comas sin espacios: `/^java\./,javax,jakarta,org,com`
-    - `separated = true` requiere una línea en blanco entre grupos.
-    - Los static imports se agrupan automáticamente con su paquete base (ej: static org.assertj.* va con org.*).
-    - Para más detalles sobre el orden correcto, ver PASO 0 sección "⚠️ CRÍTICO - Orden de Imports en Checkstyle" y "⚠️ GUÍA COMPLETA - Orden de Imports (CRÍTICO)".
   
 - Configura spotbugs con nivel de severidad alto:
   ⚠️ IMPORTANTE: NO uses strings directamente para effort y reportLevel.
@@ -1089,89 +1026,6 @@ En build.gradle:
   ```
   ⚠️ NOTA: jacocoTestReport depende de test, así que se ejecuta después (finalizedBy) 
   para evitar dependencias circulares.
-  
-  ⚠️ IMPORTANTE - Ejecutar checkstyle antes de continuar:
-  - Después de cada cambio en código, ejecuta primero:
-    ```bash
-    ./gradlew checkstyleMain checkstyleTest --no-daemon
-    ```
-  - Si hay errores de ImportOrder, corrígelos INMEDIATAMENTE antes de continuar.
-  - Solo continúa al siguiente paso cuando checkstyleMain y checkstyleTest pasen sin errores.
-
-⚠️ GUÍA COMPLETA - Orden de Imports (CRÍTICO):
-Para evitar errores de Checkstyle, SIEMPRE sigue este orden estricto:
-
-1. **Grupo java.*** (sin separación entre imports del mismo grupo):
-   ```java
-   import java.math.BigDecimal;
-   import java.time.LocalDate;
-   import java.time.LocalDateTime;
-   ```
-
-2. **Línea en blanco** (separación obligatoria)
-
-3. **Grupo jakarta.*** (o javax.*):
-   ```java
-   import jakarta.validation.Valid;
-   import jakarta.persistence.Entity;
-   ```
-
-4. **Línea en blanco** (separación obligatoria)
-
-5. **Grupo org.*** (imports normales primero):
-   ```java
-   import org.junit.jupiter.api.Test;
-   import org.springframework.web.bind.annotation.RestController;
-   ```
-
-6. **Static imports del grupo org.*** (sin línea en blanco, dentro del mismo grupo):
-   ```java
-   import static org.assertj.core.api.Assertions.assertThat;
-   import static org.mockito.Mockito.verify;
-   ```
-
-7. **Línea en blanco** (separación obligatoria)
-
-8. **Grupo com.***:
-   ```java
-   import com.bank.paymentinitiation.domain.model.PaymentOrder;
-   import com.bank.paymentinitiation.application.service.InitiatePaymentOrderService;
-   ```
-
-9. **Línea en blanco** (separación obligatoria)
-
-10. **Lombok** (si existe, generalmente al final):
-    ```java
-    import lombok.RequiredArgsConstructor;
-    import lombok.extern.slf4j.Slf4j;
-    ```
-
-Ejemplo COMPLETO y CORRECTO:
-```java
-package com.bank.paymentinitiation.adapter.in.rest;
-
-import java.time.LocalDateTime;
-
-import jakarta.validation.Valid;
-
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.RestController;
-import static org.assertj.core.api.Assertions.assertThat;
-
-import com.bank.paymentinitiation.domain.model.PaymentOrder;
-import com.bank.paymentinitiation.generated.api.PaymentOrdersApi;
-
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-```
-
-Errores COMUNES a evitar:
-- ❌ Poner jakarta.* después de org.*
-- ❌ Poner static imports después de com.*
-- ❌ No separar grupos con línea en blanco
-- ❌ Separar static imports de org.* con línea en blanco antes de com.*
-- ❌ Poner lombok entre jakarta.* y org.*
 
 No seas extremo con las reglas pero sí suficiente para que el código esté ordenado.
 
@@ -1633,12 +1487,8 @@ Before considering the challenge DONE, verify:
 
 ✅ **Quality Gates:**
 - ./gradlew clean check passes:
-  - JaCoCo coverage >= 75% (realistic target, puede aumentarse a 80-85%)
+  - JaCoCo coverage >= 75% (realistic target)
   - Checkstyle (maxWarnings: 10, excludes generated code)
-    * checkstyleMain y checkstyleTest deben pasar sin errores
-    * Verificar orden de imports (java.* → jakarta.* → org.* → com.*)
-    * Verificar separación entre grupos (una línea en blanco)
-    * Verificar static imports dentro del grupo org.*
   - SpotBugs (HIGH confidence, excludes generated code)
   - All tests pass
 
@@ -1666,17 +1516,6 @@ If any of these checks fail, fix them before delivering the solution.
 
 ### Problemas Comunes y Soluciones
 
-0. **Checkstyle - Orden de Imports:**
-   - Problema: Errores frecuentes de ImportOrder por orden incorrecto o separación incorrecta.
-   - Solución: Seguir estrictamente el orden java.* → jakarta.* → org.* → com.* con una línea en blanco entre grupos.
-   - Static imports deben ir dentro del grupo org.*, después de los imports normales de org.*, sin línea en blanco antes de com.*.
-   - Lombok debe estar separado con su propia línea en blanco, generalmente después de com.*.
-   - Errores comunes:
-     * "Orden incorrecto para el import 'org...'": Generalmente significa que org.* está antes de jakarta.* o com.* está antes de org.*.
-     * "Separación extra en el grupo": Hay una línea en blanco dentro de un grupo (ej: entre dos imports de org.*).
-     * "'lombok...' debería separarse": Lombok necesita separación de otros imports (agregar línea en blanco antes).
-   - Ver ejemplos detallados en PASO 0 sección "GUÍA COMPLETA - Orden de Imports".
-
 1. **Ambiguidad de Tipos en MapStruct:**
    - Problema: PaymentAmount y PaymentStatus existen en dominio y generated.model.
    - Solución: Usar nombres completamente calificados en mappers.
@@ -1692,12 +1531,6 @@ If any of these checks fail, fix them before delivering the solution.
 4. **Checkstyle y Código Generado:**
    - Problema: Checkstyle falla en código generado por OpenAPI.
    - Solución: Excluir usando BeforeExecutionExclusionFileFilter en checkstyle.xml.
-   - Problema adicional: Errores frecuentes de ImportOrder por orden incorrecto o separación incorrecta.
-   - Solución detallada: 
-     * Orden estricto: java.* → jakarta.* → org.* → com.*
-     * Static imports dentro del grupo org.*, después de imports normales de org.*
-     * Lombok separado después de com.*
-     * Ver PASO 0 sección "GUÍA COMPLETA - Orden de Imports" para ejemplos completos.
 
 5. **Generación de paymentOrderReference:**
    - Problema: El mapper necesita la referencia pero no debe generarla.
@@ -1789,17 +1622,13 @@ Antes de considerar el proyecto completo, ejecuta estos comandos y verifica que 
 # 3. Ejecutar quality gates
 ./gradlew check
 
-# 5. Verificar reportes (todos deben estar disponibles)
+# 4. Verificar reportes
 # - Tests: build/reports/tests/test/index.html
 # - JaCoCo: build/reports/jacoco/html/index.html
-#   * Verificar que la cobertura >= 75% (o el mínimo configurado)
-# - Checkstyle: 
-#   * build/reports/checkstyle/main.html
-#   * build/reports/checkstyle/test.html
-#   * Verificar que no hay errores de ImportOrder
+# - Checkstyle: build/reports/checkstyle/main.html
 # - SpotBugs: build/reports/spotbugs/main.html
 
-# 6. Ejecutar aplicación localmente
+# 5. Ejecutar aplicación localmente
 ./gradlew bootRun
 # Verificar: http://localhost:8080/actuator/health
 
@@ -4225,8 +4054,8 @@ Según el enunciado y el Postman:
 		
 		{
   "externalReference": "EXT-1",
-  "debtorAccount": { "iban": "EC123456789012345678" },
-  "creditorAccount": { "iban": "EC987654321098765432" },
+  "debtorAccount": { "iban": "EC12DEBTOR" },
+  "creditorAccount": { "iban": "EC98CREDITOR" },
   "instructedAmount": { "amount": 150.75, "currency": "USD" },
   "remittanceInformation": "Factura 001-123",
   "requestedExecutionDate": "2025-10-31"

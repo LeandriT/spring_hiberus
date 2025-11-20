@@ -4208,8 +4208,8 @@ Asegúrate de incluir las anotaciones y la configuración necesarias de Spring B
 ===== /mnt/data/prompt_v4.txt =====
 1. Contexto del proyecto
 	•	Un banco está migrando servicios SOAP legados a microservicios REST alineados con el estándar BIAN.
-	•	Para la prueba se toma el servicio SOAP de órdenes de pago (PaymentOrder) como punto de partida.  ￼
-	•	El WSDL y los XML de ejemplo sirven solo para análisis, no para exponer SOAP nuevamente.  ￼
+	•	Para la prueba se toma el servicio SOAP de órdenes de pago (PaymentOrder) como punto de partida.   
+	•	El WSDL y los XML de ejemplo sirven solo para análisis, no para exponer SOAP nuevamente.   
 
 Objetivo: diseñar e implementar un microservicio REST (contract-first, hexagonal) para el Service Domain “Payment Initiation” – BQ PaymentOrder, que reemplace funcionalmente al servicio SOAP legado.
 
@@ -4385,7 +4385,7 @@ Opcionales (Nice to have)
 
 7. Entregables esperados
 
-Según el enunciado:  ￼
+Según el enunciado:   
 	1.	Repositorio (URL).
 	2.	README con:
 	•	Contexto y decisiones de diseño.
@@ -4501,3 +4501,64 @@ Tú, como desarrollador/arquitecto, debes:
 }
 
 ===== /mnt/data/TechnicalTest_Banking-Java.pdf =====
+
+======================================================
+ANEXO – RESUMEN SOAP → REST Y FOCO DE TESTING
+======================================================
+
+Este anexo resume el análisis del servicio SOAP legacy y cómo se mapea al microservicio REST BIAN Payment Initiation.
+
+1) Operaciones SOAP → Operaciones BIAN REST
+-------------------------------------------
+- SubmitPaymentOrder
+  → BIAN "Initiate" payment order
+  → REST: POST /payment-initiation/payment-orders
+
+- GetPaymentOrderStatus
+  → BIAN "Retrieve Status" de la orden
+  → REST: GET /payment-initiation/payment-orders/{id}/status
+
+(En algunos WSDL también aparece una operación de consulta completa de la orden, que mapeamos a:
+   GET /payment-initiation/payment-orders/{id}
+ para recuperar todos los datos del PaymentOrder.)
+
+2) Campos clave (mapeo conceptual)
+-----------------------------------
+A nivel conceptual y de dominio, los campos más importantes del SOAP legacy se mapean así:
+
+- paymentOrderId / paymentOrderRef  → paymentOrderReference (CR de BIAN)
+- debtorAccount / debtorIban        → debtorAccount.iban
+- creditorAccount / creditorIban    → creditorAccount.iban
+- instructedAmount / currency       → instructedAmount.amount / instructedAmount.currency
+- remittanceInformation / concept   → remittanceInformation
+- requestedExecutionDate            → requestedExecutionDate
+- status / statusCode               → PaymentStatus (INITIATED, PENDING, PROCESSED, COMPLETED, FAILED, CANCELLED)
+- timestamps legacy (creation / lastUpdate)
+  → createdAt / updatedAt (lastUpdated en responses REST)
+
+3) Implicaciones de diseño
+--------------------------
+- El contrato OpenAPI ES el punto de verdad, pero debe respetar tanto:
+  • Los mensajes del WSDL (semántica de negocio)
+  • La colección Postman (payloads reales que se validan en el challenge)
+- La aggregate root PaymentOrder encapsula estas mismas propiedades, pero expresadas en value objects y enum de dominio.
+- Los mappers (REST y persistence) son responsables de traducir entre:
+  • JSON BIAN ↔ dominio
+  • Dominio ↔ entidad JPA
+
+4) Enfoque de pruebas (resumen)
+-------------------------------
+- Tests unitarios:
+  • Validan el comportamiento del agregado PaymentOrder, value objects y servicios de aplicación.
+- Tests de integración (WebTestClient + H2 real):
+  • Validan que la API REST respeta el contrato OpenAPI + Postman:
+    - POST crea correctamente una orden y devuelve INITIATED.
+    - GET por id devuelve todos los campos clave.
+    - GET /status devuelve paymentOrderStatus + lastUpdated.
+    - Casos de error 400/404 devuelven ProblemDetail conforme a RFC 7807.
+- Tests de repositorio (@DataJpaTest opcionales):
+  • Verifican que PaymentOrderJpaRepository y el adapter funcionan con H2.
+
+Este anexo no cambia las reglas ni los pasos del playbook principal, solo refuerza el contexto
+de migración SOAP → REST y ayuda a entender por qué el dominio, el contrato y los tests se han
+definido de esta forma.

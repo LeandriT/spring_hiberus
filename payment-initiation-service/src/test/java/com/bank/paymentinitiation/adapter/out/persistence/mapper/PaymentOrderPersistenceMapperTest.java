@@ -1,5 +1,17 @@
 package com.bank.paymentinitiation.adapter.out.persistence.mapper;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.bank.paymentinitiation.adapter.out.persistence.entity.PaymentOrderEntity;
 import com.bank.paymentinitiation.adapter.out.persistence.entity.PaymentOrderStatusEntity;
 import com.bank.paymentinitiation.domain.model.ExternalReference;
@@ -8,18 +20,6 @@ import com.bank.paymentinitiation.domain.model.PayerReference;
 import com.bank.paymentinitiation.domain.model.PaymentAmount;
 import com.bank.paymentinitiation.domain.model.PaymentOrder;
 import com.bank.paymentinitiation.domain.model.PaymentStatus;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit tests for PaymentOrderPersistenceMapper.

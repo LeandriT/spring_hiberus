@@ -1,8 +1,8 @@
 package com.bank.paymentinitiation.domain.port.out;
 
-import com.bank.paymentinitiation.domain.model.PaymentOrder;
-
 import java.util.Optional;
+
+import com.bank.paymentinitiation.domain.model.PaymentOrder;
 
 /**
  * Output port (driven port) for persisting and retrieving payment orders.

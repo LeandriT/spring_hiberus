@@ -1,5 +1,16 @@
 package com.bank.paymentinitiation.adapter.in.rest.mapper;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.bank.paymentinitiation.domain.model.ExternalReference;
 import com.bank.paymentinitiation.domain.model.PayeeReference;
 import com.bank.paymentinitiation.domain.model.PayerReference;
@@ -11,17 +22,6 @@ import com.bank.paymentinitiation.generated.model.InitiatePaymentOrderRequest;
 import com.bank.paymentinitiation.generated.model.InitiatePaymentOrderResponse;
 import com.bank.paymentinitiation.generated.model.PaymentOrderStatusResponse;
 import com.bank.paymentinitiation.generated.model.RetrievePaymentOrderResponse;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit tests for PaymentOrderRestMapper.

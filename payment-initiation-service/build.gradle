@@ -68,6 +68,7 @@ checkstyle {
     configProperties = [
         'checkstyle.suppressions.file': "$rootDir/config/checkstyle/suppressions.xml"
     ]
+    maxWarnings = 10  // Permite algunos warnings antes de fallar
 }
 
 tasks.named('checkstyleMain') {
@@ -84,12 +85,23 @@ tasks.named('checkstyleTest') {
     }
 }
 
-// SpotBugs Configuration (solo plugin declarado, configuración detallada en PASO 14)
+// SpotBugs Configuration
 spotbugs {
     excludeFilter = file("$rootDir/config/spotbugs/exclude.xml")
 }
 
 tasks.named('spotbugsMain') {
+    effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+    reportLevel = com.github.spotbugs.snom.Confidence.valueOf('HIGH')
+    reports {
+        html.required = true
+        xml.required = false
+    }
+}
+
+tasks.named('spotbugsTest') {
+    effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+    reportLevel = com.github.spotbugs.snom.Confidence.valueOf('HIGH')
     reports {
         html.required = true
         xml.required = false
@@ -106,6 +118,60 @@ jacocoTestReport {
     reports {
         xml.required = true
         html.required = true
+    }
+    
+    // Excluir de cobertura JaCoCo
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                '**/generated/**',                    // Código generado
+                '**/PaymentOrderEntity.class',        // Entidades JPA
+                '**/*MapperImpl.class',               // Implementaciones de MapStruct
+                '**/PaymentInitiationServiceApplication.class',  // Clase principal
+                '**/config/**'                        // Configuración
+            ])
+        }))
+    }
+}
+
+jacocoTestCoverageVerification {
+    mustRunAfter jacocoTestReport
+    
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.85  // Cobertura mínima >= 85%
+            }
+        }
+        
+        rule {
+            element = 'CLASS'
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80  // Cobertura mínima por clase >= 80%
+            }
+            excludes = [
+                '*.generated.*',
+                '*.*Entity',
+                '*.*MapperImpl',
+                '*.*Application',
+                '*.config.*'
+            ]
+        }
+    }
+    
+    // Excluir de verificación de cobertura (mismas exclusiones que en reporte)
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                '**/generated/**',
+                '**/PaymentOrderEntity.class',
+                '**/*MapperImpl.class',
+                '**/PaymentInitiationServiceApplication.class',
+                '**/config/**'
+            ])
+        }))
     }
 }
 
@@ -147,7 +213,13 @@ test {
     finalizedBy jacocoTestReport
 }
 
-// Build task
-tasks.named('build') {
-    dependsOn checkstyleMain
+// Check task - Quality Gates
+check {
+    dependsOn 'checkstyleMain'
+    dependsOn 'checkstyleTest'
+    dependsOn 'spotbugsMain'
+    dependsOn 'spotbugsTest'
+    dependsOn 'test'
+    // jacocoTestCoverageVerification se ejecutará después de jacocoTestReport
+    finalizedBy 'jacocoTestCoverageVerification'
 }

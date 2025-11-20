@@ -1,11 +1,12 @@
 package com.bank.paymentinitiation.adapter.out.persistence.jpa;
 
-import com.bank.paymentinitiation.adapter.out.persistence.entity.PaymentOrderEntity;
+import java.util.Optional;
+import java.util.UUID;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
-import java.util.UUID;
+import com.bank.paymentinitiation.adapter.out.persistence.entity.PaymentOrderEntity;
 
 /**
  * Spring Data JPA repository for PaymentOrderEntity.

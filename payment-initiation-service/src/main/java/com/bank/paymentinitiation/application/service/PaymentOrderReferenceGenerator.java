@@ -1,8 +1,8 @@
 package com.bank.paymentinitiation.application.service;
 
-import org.springframework.stereotype.Component;
-
 import java.util.UUID;
+
+import org.springframework.stereotype.Component;
 
 /**
  * Component that generates unique payment order references.

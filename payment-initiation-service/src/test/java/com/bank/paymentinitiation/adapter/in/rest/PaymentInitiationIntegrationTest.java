@@ -1,6 +1,5 @@
 package com.bank.paymentinitiation.adapter.in.rest;
 
-import com.bank.paymentinitiation.adapter.out.persistence.jpa.PaymentOrderJpaRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,7 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-import java.time.LocalDate;
+import com.bank.paymentinitiation.adapter.out.persistence.jpa.PaymentOrderJpaRepository;
 
 /**
  * Integration tests for Payment Initiation REST API.
@@ -137,7 +136,8 @@ class PaymentInitiationIntegrationTest {
     // ==================== GET /payment-initiation/payment-orders/{id}/status ====================
 
     @Test
-    @DisplayName("GET /payment-initiation/payment-orders/{id}/status - Should retrieve payment order status successfully")
+    @DisplayName("GET /payment-initiation/payment-orders/{id}/status - "
+            + "Should retrieve payment order status successfully")
     void shouldRetrievePaymentOrderStatusSuccessfully() {
         // Arrange - Create order first
         String requestJson = """

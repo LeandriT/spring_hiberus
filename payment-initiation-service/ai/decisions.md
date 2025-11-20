@@ -2315,6 +2315,281 @@ public Optional<PaymentOrder> findByReference(String paymentOrderReference) {
 3. Los tests de integración exponen problemas que los unitarios no detectan (validaciones de Bean Validation, serialización JSON)
 4. Es importante manejar todas las excepciones de Spring (`MethodArgumentNotValidException`, `HttpMessageNotReadableException`) para retornar códigos HTTP correctos
 
+## 14. Configuración de Quality Gates (JaCoCo, Checkstyle, SpotBugs)
+
+**Fecha**: 2025-01-27
+
+**Contexto**: Necesidad de configurar los quality gates del proyecto para garantizar calidad de código, cobertura adecuada y detección de problemas potenciales.
+
+---
+
+### Decisión 1: Configuración de JaCoCo - Cobertura de Código
+
+**Fecha**: 2025-01-27
+
+**Decisión**: Configurar JaCoCo con:
+- **Cobertura mínima**: 85% a nivel de proyecto
+- **Cobertura mínima por clase**: 80% (con exclusiones para código generado, entidades, etc.)
+- **Reportes**: HTML y XML habilitados
+- **Exclusiones**: Código generado, entidades JPA, implementaciones MapStruct, clase principal, configuración
+
+**Justificación**:
+- **85% es un umbral razonable**: Suficiente para garantizar calidad sin ser extremadamente restrictivo
+- **Exclusiones apropiadas**: El código generado, entidades JPA (solo getters/setters), y MapStruct impls no necesitan ser testeados directamente
+- **Reporte HTML**: Facilita la visualización de cobertura en navegador
+- **Verificación automática**: `jacocoTestCoverageVerification` falla el build si no se alcanza el umbral
+
+**Configuración implementada**:
+```groovy
+jacocoTestCoverageVerification {
+    dependsOn jacocoTestReport
+    
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.85  // 85% mínimo
+            }
+        }
+        
+        rule {
+            element = 'CLASS'
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80  // 80% por clase
+            }
+            excludes = [/* exclusiones */]
+        }
+    }
+    
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                '**/generated/**',
+                '**/PaymentOrderEntity.class',
+                '**/*MapperImpl.class',
+                '**/PaymentInitiationServiceApplication.class',
+                '**/config/**'
+            ])
+        }))
+    }
+}
+```
+
+**Exclusiones aplicadas**:
+- `**/generated/**`: Código generado por OpenAPI Generator no debe ser testado
+- `**/PaymentOrderEntity.class`: Entidades JPA son principalmente getters/setters
+- `**/*MapperImpl.class`: Implementaciones generadas por MapStruct
+- `**/PaymentInitiationServiceApplication.class`: Clase principal Spring Boot
+- `**/config/**`: Clases de configuración Spring
+
+**Trade-offs**:
+- ✅ Garantiza cobertura adecuada del código propio
+- ✅ Exclusiones razonables para código que no requiere tests directos
+- ⚠️ 85% puede ser difícil de alcanzar inicialmente (pero es un objetivo realista con tests adecuados)
+
+---
+
+### Decisión 2: Configuración de Checkstyle - Estilo de Código
+
+**Fecha**: 2025-01-27
+
+**Decisión**: Configurar Checkstyle con:
+- **maxWarnings**: 10 (permite algunos warnings antes de fallar el build)
+- **Exclusiones**: Código generado y implementaciones de MapStruct usando `BeforeExecutionExclusionFileFilter`
+
+**Justificación**:
+- **maxWarnings: 10**: Permite algunas infracciones menores sin bloquear el build, pero mantiene estándares básicos
+- **Exclusiones automáticas**: Evita falsos positivos en código generado que no controlamos
+- **BeforeExecutionExclusionFileFilter**: Es la forma recomendada de excluir archivos en Checkstyle 10.x
+
+**Configuración en checkstyle.xml**:
+```xml
+<module name="BeforeExecutionExclusionFileFilter">
+    <property name="fileNamePattern" value="generated/.*"/>
+</module>
+<module name="BeforeExecutionExclusionFileFilter">
+    <property name="fileNamePattern" value=".*MapperImpl\.java$"/>
+</module>
+```
+
+**Patrones de exclusión**:
+- `generated/.*`: Excluye todo el código en paquetes que contengan "generated"
+- `.*MapperImpl\.java$`: Excluye todas las implementaciones generadas por MapStruct
+
+**Trade-offs**:
+- ✅ Permite mantener estándares sin ser extremadamente restrictivo
+- ✅ Exclusiones automáticas evitan falsos positivos
+- ⚠️ maxWarnings: 10 puede permitir demasiados warnings (pero es configurable)
+
+---
+
+### Decisión 3: Configuración de SpotBugs - Detección de Bugs
+
+**Fecha**: 2025-01-27
+
+**Decisión**: Configurar SpotBugs con:
+- **Effort**: MAX (análisis más exhaustivo)
+- **Report Level**: HIGH (solo reportar problemas de alta confianza)
+- **Configuración por tarea**: Usar `tasks.named()` con `Effort.valueOf()` y `Confidence.valueOf()` (NO strings directamente)
+
+**Justificación**:
+- **Effort MAX**: Más análisis, mejor detección de problemas
+- **Report Level HIGH**: Solo problemas de alta confianza, reduce falsos positivos
+- **Configuración por tarea**: En SpotBugs 6.0.0+, `effort` y `reportLevel` no aceptan strings directamente, deben usarse los enums correspondientes
+
+**Configuración implementada**:
+```groovy
+tasks.named('spotbugsMain') {
+    effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+    reportLevel = com.github.spotbugs.snom.Confidence.valueOf('HIGH')
+    excludeFilter = file("$rootDir/config/spotbugs/exclude.xml")
+    reports {
+        html.required = true
+        xml.required = false
+    }
+}
+```
+
+**Exclusiones en exclude.xml**:
+- Código generado (paquetes `com.bank.paymentinitiation.generated`)
+- Implementaciones MapStruct (`*MapperImpl`)
+- Entidades JPA (`PaymentOrderEntity`)
+- Clase principal (`PaymentInitiationServiceApplication`)
+
+**Trade-offs**:
+- ✅ Detección exhaustiva de problemas potenciales
+- ✅ Solo problemas de alta confianza (reduce falsos positivos)
+- ⚠️ Effort MAX puede ser más lento (pero aceptable para quality gates)
+
+**Alternativa considerada**: Usar strings directamente (`effort = 'max'`)
+- ❌ En SpotBugs 6.0.0+ esto causa errores de compilación
+- ❌ Debe usarse `Effort.valueOf('MAX')` y `Confidence.valueOf('HIGH')`
+
+---
+
+### Decisión 4: Configuración del Task Check - Quality Gates Integrados
+
+**Fecha**: 2025-01-27
+
+**Decisión**: Configurar el task `check` para ejecutar todos los quality gates en el orden correcto:
+- Dependencias: `checkstyleMain`, `checkstyleTest`, `spotbugsMain`, `spotbugsTest`, `test`, `jacocoTestCoverageVerification`
+- Finalizado por: `jacocoTestReport` (para evitar dependencias circulares)
+
+**Justificación**:
+- **Todas las verificaciones**: El task `check` debe ejecutar todas las verificaciones de calidad
+- **Orden correcto**: Tests primero, luego verificación de cobertura, luego reporte
+- **finalizedBy para jacocoTestReport**: `jacocoTestReport` depende de `test`, pero queremos que se ejecute después de la verificación, no antes
+
+**Configuración implementada**:
+```groovy
+check {
+    dependsOn 'checkstyleMain'
+    dependsOn 'checkstyleTest'
+    dependsOn 'spotbugsMain'
+    dependsOn 'spotbugsTest'
+    dependsOn 'test'
+    dependsOn 'jacocoTestCoverageVerification'
+    finalizedBy 'jacocoTestReport'  // Ejecuta después de los tests para evitar dependencias circulares
+}
+```
+
+**Orden de ejecución**:
+1. Checkstyle (main y test)
+2. SpotBugs (main y test)
+3. Tests unitarios e integración
+4. Verificación de cobertura JaCoCo
+5. Generación de reporte JaCoCo (finalizedBy)
+
+**Trade-offs**:
+- ✅ Todos los quality gates se ejecutan con un solo comando (`./gradlew check`)
+- ✅ Orden correcto garantiza que los reportes se generen después de las verificaciones
+- ⚠️ Puede tomar más tiempo (pero es aceptable para quality gates completos)
+
+**Alternativa considerada**: Hacer `jacocoTestReport` depender de `test` en el task `check`
+- ❌ Causaría dependencias circulares (check → test → jacocoTestReport → check)
+- ✅ `finalizedBy` es la solución correcta
+
+---
+
+### Decisión 5: Exclusiones de Código Generado
+
+**Fecha**: 2025-01-27
+
+**Decisión**: Excluir código generado de todos los quality gates:
+- **JaCoCo**: Exclusiones en `afterEvaluate` para código generado
+- **Checkstyle**: `BeforeExecutionExclusionFileFilter` con patrón `generated/.*`
+- **SpotBugs**: Exclusiones en `exclude.xml` para paquetes `com.bank.paymentinitiation.generated`
+
+**Justificación**:
+- **Código generado no debe ser testado/verificado**: No es código propio, es generado automáticamente
+- **Falsos positivos**: El código generado puede tener problemas de estilo o bugs que no podemos controlar
+- **Consistencia**: Las exclusiones deben ser consistentes en todas las herramientas
+
+**Código generado excluido**:
+- OpenAPI Generator: Interfaces y modelos generados desde `openapi.yaml`
+- MapStruct: Implementaciones generadas de mappers (`*MapperImpl`)
+
+**Trade-offs**:
+- ✅ Evita falsos positivos en código que no controlamos
+- ✅ Focus en calidad del código propio
+- ⚠️ El código generado no se verifica (pero es aceptable porque no lo escribimos nosotros)
+
+---
+
+### Decisión 6: Exclusiones de Entidades JPA y Configuración
+
+**Fecha**: 2025-01-27
+
+**Decisión**: Excluir entidades JPA y clases de configuración de cobertura JaCoCo.
+
+**Justificación**:
+- **Entidades JPA**: Principalmente getters/setters generados por Lombok, no requieren tests directos
+- **Clases de configuración**: Configuración de Spring, no contiene lógica de negocio que deba testearse
+- **Focus en lógica de negocio**: Los tests deben enfocarse en lógica de negocio, no en boilerplate
+
+**Trade-offs**:
+- ✅ Permite enfocar los tests en lógica de negocio importante
+- ✅ Evita penalizar cobertura por código que no requiere tests exhaustivos
+- ⚠️ Las entidades JPA podrían beneficiarse de algunos tests de validación (pero no son críticos)
+
+---
+
+## 15. Decisión sobre Estructura del README.md
+
+**Fecha**: 2025-01-27
+
+**Decisión**: Crear un README.md completo y estructurado que incluya todas las secciones necesarias para facilitar la comprensión, ejecución y mantenimiento del proyecto.
+
+**Justificación**:
+- **Documentación completa**: Un README bien estructurado es la primera impresión del proyecto
+- **Facilita onboarding**: Nuevos desarrolladores pueden entender y ejecutar el proyecto rápidamente
+- **Referencia rápida**: Comandos comunes y estructura del proyecto documentados
+- **Profesionalismo**: Demuestra atención al detalle y buenas prácticas
+
+**Estructura elegida**:
+1. **Descripción del proyecto**: Contexto BIAN y migración SOAP → REST
+2. **Arquitectura hexagonal**: Diagrama y explicación de la estructura de paquetes
+3. **Stack técnico**: Lista completa de tecnologías con versiones
+4. **Cómo ejecutar**: Comandos específicos para ejecutar, testear y verificar calidad
+5. **Cómo probar con Postman**: Ejemplos de requests/responses y referencia a colección
+6. **Uso de IA**: Documentación completa de la carpeta `ai/` y prácticas aplicadas
+
+**Características adicionales**:
+- Uso de emojis para mejor legibilidad visual
+- Ejemplos de código y JSON para facilitar comprensión
+- Referencias a estándares (BIAN, RFC 7807, OpenAPI 3.0)
+- Checklist de estado del proyecto
+- Estructura visual del proyecto
+
+**Trade-offs**:
+- ✅ Documentación completa y profesional
+- ✅ Facilita onboarding y mantenimiento
+- ✅ Referencia rápida para comandos comunes
+- ⚠️ README más largo (pero mejor documentado)
+
+---
+
 ## Próximos Pasos
 
 Las siguientes decisiones se documentarán conforme se avance en la implementación:

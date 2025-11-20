@@ -1,8 +1,8 @@
 package com.bank.paymentinitiation.domain.model;
 
-import lombok.Value;
-
 import java.util.regex.Pattern;
+
+import lombok.Value;
 
 /**
  * Value object representing a Payment Order Reference.

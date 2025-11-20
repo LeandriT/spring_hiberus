@@ -1032,3 +1032,154 @@ Configura y crea tests de integración usando Spring Boot Test + WebTestClient, 
 - `openapi/openapi.yaml`: Eliminado pattern de currency
 - `ai/prompts.md`: Esta entrada documentada
 - `ai/decisions.md`: Decisiones sobre tests de integración documentadas
+
+---
+
+## Prompt 13: Configuración de Quality Gates (JaCoCo, Checkstyle, SpotBugs)
+
+**Fecha**: 2025-01-27
+
+**Contexto**: Necesidad de configurar los quality gates del proyecto (JaCoCo para cobertura, Checkstyle para estilo de código, SpotBugs para detección de bugs) según las especificaciones del proyecto. La configuración debe incluir exclusiones para código generado, entidades JPA, implementaciones de MapStruct, clase principal y configuración.
+
+**Herramienta**: Cursor
+
+**Prompt usado**:
+```
+Configura en build.gradle:
+
+1. JaCoCo:
+   - Cobertura mínima >= 85%
+   - Reporte HTML y verificación de cobertura
+   - Excluir: código generado (**/generated/**), entidades JPA (PaymentOrderEntity), implementaciones MapStruct (*MapperImpl.class), clase principal (PaymentInitiationServiceApplication), configuración (config/**)
+
+2. Checkstyle:
+   - maxWarnings: 10 (permite algunos warnings antes de fallar)
+   - Excluir código generado en checkstyle.xml usando BeforeExecutionExclusionFileFilter:
+     - Patrón: "generated/.*"
+     - Patrón: ".*MapperImpl\.java$"
+
+3. SpotBugs:
+   - ⚠️ IMPORTANTE: NO uses strings directamente para effort y reportLevel
+   - Configura cada tarea individualmente usando Effort.valueOf('MAX') y Confidence.valueOf('HIGH')
+   - Excluir en exclude.xml: código generado, MapStruct impls, entidades JPA, clase principal
+
+4. Task check:
+   - Configurar todas las dependencias: checkstyleMain, checkstyleTest, spotbugsMain, spotbugsTest, test, jacocoTestCoverageVerification
+   - finalizedBy jacocoTestReport (evitar dependencias circulares)
+```
+
+**Respuesta de la IA**:
+La IA configuró correctamente todos los quality gates:
+
+1. **JaCoCo**:
+   - Configurado `jacocoTestReport` con exclusiones usando `afterEvaluate` y `classDirectories.setFrom()`
+   - Configurado `jacocoTestCoverageVerification` con `minimum = 0.85` (85%)
+   - Regla adicional por clase con cobertura mínima >= 80%
+   - Exclusiones configuradas correctamente para código generado, entidades, MapStruct impls, clase principal y config
+
+2. **Checkstyle**:
+   - Agregado `maxWarnings = 10` en el bloque `checkstyle {}`
+   - Agregado `BeforeExecutionExclusionFileFilter` en `checkstyle.xml` para excluir código generado y MapStruct impls
+
+3. **SpotBugs**:
+   - Configurado correctamente usando `tasks.named('spotbugsMain')` y `tasks.named('spotbugsTest')`
+   - Usado `Effort.valueOf('MAX')` y `Confidence.valueOf('HIGH')` (no strings directamente)
+   - Actualizado `exclude.xml` con todas las exclusiones requeridas
+
+4. **Task check**:
+   - Configurado con todas las dependencias necesarias
+   - Usado `finalizedBy 'jacocoTestReport'` para evitar dependencias circulares
+
+**Correcciones manuales aplicadas**:
+- Ninguna. La configuración fue generada correctamente según las especificaciones.
+
+**Archivos generados/modificados**:
+- `build.gradle`: Configuración completa de JaCoCo, Checkstyle y SpotBugs agregada
+- `config/checkstyle/checkstyle.xml`: Agregado `BeforeExecutionExclusionFileFilter` para exclusiones
+- `config/spotbugs/exclude.xml`: Actualizado con todas las exclusiones requeridas
+- `ai/prompts.md`: Esta entrada documentada
+- `ai/decisions.md`: Decisiones sobre quality gates documentadas
+
+---
+
+## Prompt 14: Generación del README.md Completo
+
+**Fecha**: 2025-01-27
+
+**Contexto**: Necesidad de crear un README.md completo y actualizado que documente todo el proyecto, incluyendo descripción, arquitectura, stack técnico, cómo ejecutar, cómo probar con Postman y uso de IA.
+
+**Herramienta**: Cursor
+
+**Prompt usado**:
+```
+Crea README.md con:
+
+1) Descripción del proyecto (BIAN Payment Initiation / PaymentOrder, migración de SOAP a REST).
+2) Arquitectura hexagonal y estructura de paquetes.
+3) Stack técnico (Java 21, Spring Boot 3, H2, JPA, Gradle, MapStruct, OpenAPI, WebTestClient, JaCoCo, Checkstyle, SpotBugs, Docker).
+4) Cómo ejecutar:
+   - ./gradlew clean check
+   - ./gradlew bootRun
+   - docker compose up --build
+5) Cómo probar con Postman (referencia a postman_collection.json).
+6) Uso de IA (descripción de carpeta ai/, qué se ha documentado).
+```
+
+**Respuesta de la IA**:
+La IA generó un README.md completo y estructurado que incluye:
+
+1. **Descripción del proyecto**:
+   - Introducción al microservicio BIAN Payment Initiation
+   - Descripción de la migración SOAP → REST
+   - Mapeo de operaciones SOAP legacy a operaciones REST BIAN
+   - Endpoints disponibles (Initiate, Retrieve, Retrieve Status)
+
+2. **Arquitectura hexagonal**:
+   - Diagrama de estructura de paquetes completo
+   - Explicación de cada capa (domain, application, adapter)
+   - Principios arquitectónicos aplicados
+   - Separación de responsabilidades
+
+3. **Stack técnico**:
+   - Lista completa de tecnologías utilizadas
+   - Versiones específicas (Java 21, Spring Boot 3.2.0, etc.)
+   - Categorización por tipo (Runtime, Base de datos, Build, Testing, Quality Gates)
+   - Herramientas de DevOps (Docker mencionado como futuro)
+
+4. **Cómo ejecutar**:
+   - Instrucciones detalladas para `./gradlew clean check`
+   - Instrucciones para `./gradlew bootRun`
+   - Referencia a Docker (mencionado como futuro)
+   - Comandos Gradle útiles adicionales
+   - URLs de acceso (API, H2 Console, Health Check)
+
+5. **Cómo probar con Postman**:
+   - Referencia al archivo `postman_collection.json`
+   - Ejemplos de requests y responses para cada endpoint
+   - Códigos de estado HTTP explicados
+   - Instrucciones para importar la colección en Postman
+   - Ejemplos JSON completos
+
+6. **Uso de IA**:
+   - Estructura completa de la carpeta `ai/`
+   - Descripción de cada archivo (`prompts.md`, `decisions.md`, `generations/`)
+   - Contenido documentado en cada archivo
+   - Prácticas de uso de IA aplicadas
+
+**Características adicionales**:
+- Secciones bien organizadas con emojis para mejor legibilidad
+- Ejemplos de código y JSON para facilitar comprensión
+- Referencias a estándares (BIAN, RFC 7807, OpenAPI 3.0)
+- Estado del proyecto con checklist de completado
+- Estructura del proyecto visualmente clara
+
+**Correcciones manuales aplicadas**:
+- Se mejoró la sección de Docker mencionando que está por venir (no implementado aún)
+- Se agregaron más ejemplos de comandos Gradle útiles
+- Se expandió la sección de uso de IA con más detalles
+- Se agregó sección de "Estado del Proyecto" con checklist
+
+**Archivos generados/modificados**:
+- `README.md`: README completo y actualizado creado
+- `ai/prompts.md`: Esta entrada documentada
+- `ai/decisions.md`: Decisiones sobre estructura del README documentadas (opcional)

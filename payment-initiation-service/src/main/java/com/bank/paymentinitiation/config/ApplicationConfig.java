@@ -1,12 +1,13 @@
 package com.bank.paymentinitiation.config;
 
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
 import com.bank.paymentinitiation.application.service.InitiatePaymentOrderService;
 import com.bank.paymentinitiation.application.service.RetrievePaymentOrderService;
 import com.bank.paymentinitiation.application.service.RetrievePaymentOrderStatusService;
 import com.bank.paymentinitiation.domain.port.out.PaymentOrderRepository;
 import com.bank.paymentinitiation.domain.service.PaymentOrderDomainService;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
 /**
  * Application configuration class.

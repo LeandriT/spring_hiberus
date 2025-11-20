@@ -8,6 +8,14 @@
     <property name="severity" value="error"/>
     <property name="fileExtensions" value="java"/>
     
+    <!-- Exclude generated code and MapStruct implementations -->
+    <module name="BeforeExecutionExclusionFileFilter">
+        <property name="fileNamePattern" value="generated/.*"/>
+    </module>
+    <module name="BeforeExecutionExclusionFileFilter">
+        <property name="fileNamePattern" value=".*MapperImpl\.java$"/>
+    </module>
+    
     <!-- Suppression Filter -->
     <module name="SuppressionFilter">
         <property name="file" value="${checkstyle.suppressions.file}"/>
@@ -78,7 +86,7 @@
         <module name="RedundantImport"/>
         <module name="UnusedImports"/>
         <module name="ImportOrder">
-            <property name="groups" value="/^java\./,javax,org,com"/>
+            <property name="groups" value="/^java\./,javax,jakarta,org,com"/>
             <property name="ordered" value="true"/>
             <property name="separated" value="true"/>
         </module>

@@ -1,8 +1,8 @@
 package com.bank.paymentinitiation.domain.model;
 
-import lombok.Value;
-
 import java.math.BigDecimal;
+
+import lombok.Value;
 
 /**
  * Value object representing a payment amount with currency.

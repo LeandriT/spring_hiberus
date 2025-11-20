@@ -1,5 +1,15 @@
 package com.bank.paymentinitiation.adapter.in.rest.mapper;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.mapstruct.Named;
+import org.mapstruct.ReportingPolicy;
+
 import com.bank.paymentinitiation.domain.model.ExternalReference;
 import com.bank.paymentinitiation.domain.model.PayeeReference;
 import com.bank.paymentinitiation.domain.model.PayerReference;
@@ -12,15 +22,6 @@ import com.bank.paymentinitiation.generated.model.InitiatePaymentOrderResponse;
 import com.bank.paymentinitiation.generated.model.PaymentOrderStatus;
 import com.bank.paymentinitiation.generated.model.PaymentOrderStatusResponse;
 import com.bank.paymentinitiation.generated.model.RetrievePaymentOrderResponse;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
-import org.mapstruct.Named;
-import org.mapstruct.ReportingPolicy;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 
 /**
  * MapStruct mapper for converting between REST DTOs and domain models.
@@ -56,10 +57,14 @@ public interface PaymentOrderRestMapper {
      * @return the domain PaymentOrder
      */
     @Mapping(target = "paymentOrderReference", source = "paymentOrderReference")
-    @Mapping(target = "externalReference", source = "request.externalReference", qualifiedByName = "stringToExternalReference")
-    @Mapping(target = "payerReference", source = "request.debtorAccount.iban", qualifiedByName = "ibanToPayerReference")
-    @Mapping(target = "payeeReference", source = "request.creditorAccount.iban", qualifiedByName = "ibanToPayeeReference")
-    @Mapping(target = "instructedAmount", source = "request.instructedAmount", qualifiedByName = "generatedPaymentAmountToDomain")
+    @Mapping(target = "externalReference", source = "request.externalReference",
+            qualifiedByName = "stringToExternalReference")
+    @Mapping(target = "payerReference", source = "request.debtorAccount.iban",
+            qualifiedByName = "ibanToPayerReference")
+    @Mapping(target = "payeeReference", source = "request.creditorAccount.iban",
+            qualifiedByName = "ibanToPayeeReference")
+    @Mapping(target = "instructedAmount", source = "request.instructedAmount",
+            qualifiedByName = "generatedPaymentAmountToDomain")
     @Mapping(target = "remittanceInformation", source = "request.remittanceInformation")
     @Mapping(target = "requestedExecutionDate", source = "request.requestedExecutionDate")
     @Mapping(target = "status", ignore = true) // Will be set by domain logic
@@ -74,13 +79,18 @@ public interface PaymentOrderRestMapper {
      * @return the REST response DTO
      */
     @Mapping(target = "paymentOrderReference", source = "paymentOrderReference")
-    @Mapping(target = "paymentOrderStatus", source = "status", qualifiedByName = "domainStatusToGenerated")
-    @Mapping(target = "debtorAccount", source = "payerReference", qualifiedByName = "payerReferenceToAccount")
-    @Mapping(target = "creditorAccount", source = "payeeReference", qualifiedByName = "payeeReferenceToAccount")
-    @Mapping(target = "instructedAmount", source = "instructedAmount", qualifiedByName = "domainPaymentAmountToGenerated")
+    @Mapping(target = "paymentOrderStatus", source = "status",
+            qualifiedByName = "domainStatusToGenerated")
+    @Mapping(target = "debtorAccount", source = "payerReference",
+            qualifiedByName = "payerReferenceToAccount")
+    @Mapping(target = "creditorAccount", source = "payeeReference",
+            qualifiedByName = "payeeReferenceToAccount")
+    @Mapping(target = "instructedAmount", source = "instructedAmount",
+            qualifiedByName = "domainPaymentAmountToGenerated")
     @Mapping(target = "remittanceInformation", source = "remittanceInformation")
     @Mapping(target = "requestedExecutionDate", source = "requestedExecutionDate")
-    @Mapping(target = "createdAt", source = "createdAt", qualifiedByName = "localDateTimeToOffsetDateTime")
+    @Mapping(target = "createdAt", source = "createdAt",
+            qualifiedByName = "localDateTimeToOffsetDateTime")
     InitiatePaymentOrderResponse toInitiateResponse(PaymentOrder paymentOrder);
     
     /**
@@ -90,15 +100,21 @@ public interface PaymentOrderRestMapper {
      * @return the REST response DTO
      */
     @Mapping(target = "paymentOrderReference", source = "paymentOrderReference")
-    @Mapping(target = "paymentOrderStatus", source = "status", qualifiedByName = "domainStatusToGenerated")
+    @Mapping(target = "paymentOrderStatus", source = "status",
+            qualifiedByName = "domainStatusToGenerated")
     @Mapping(target = "externalReference", source = "externalReference.value")
-    @Mapping(target = "debtorAccount", source = "payerReference", qualifiedByName = "payerReferenceToAccount")
-    @Mapping(target = "creditorAccount", source = "payeeReference", qualifiedByName = "payeeReferenceToAccount")
-    @Mapping(target = "instructedAmount", source = "instructedAmount", qualifiedByName = "domainPaymentAmountToGenerated")
+    @Mapping(target = "debtorAccount", source = "payerReference",
+            qualifiedByName = "payerReferenceToAccount")
+    @Mapping(target = "creditorAccount", source = "payeeReference",
+            qualifiedByName = "payeeReferenceToAccount")
+    @Mapping(target = "instructedAmount", source = "instructedAmount",
+            qualifiedByName = "domainPaymentAmountToGenerated")
     @Mapping(target = "remittanceInformation", source = "remittanceInformation")
     @Mapping(target = "requestedExecutionDate", source = "requestedExecutionDate")
-    @Mapping(target = "createdAt", source = "createdAt", qualifiedByName = "localDateTimeToOffsetDateTime")
-    @Mapping(target = "lastUpdated", source = "updatedAt", qualifiedByName = "localDateTimeToOffsetDateTime")
+    @Mapping(target = "createdAt", source = "createdAt",
+            qualifiedByName = "localDateTimeToOffsetDateTime")
+    @Mapping(target = "lastUpdated", source = "updatedAt",
+            qualifiedByName = "localDateTimeToOffsetDateTime")
     RetrievePaymentOrderResponse toRetrieveResponse(PaymentOrder paymentOrder);
     
     /**
