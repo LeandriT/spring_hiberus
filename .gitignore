@@ -24,3 +24,8 @@ hs_err_pid*
 replay_pid*
 /.idea/.gitignore
 /.idea/vcs.xml
+/.idea/checkstyle-idea.xml
+/.idea/copilot.data.migration.agent.xml
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/spring_hiberus.iml
