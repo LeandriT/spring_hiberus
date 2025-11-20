@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<suppressions>
+    <!-- Suppress all checks for generated code -->
+    <suppress files=".*[\\/]generated[\\/].*" checks=".*"/>
+    
+    <!-- Suppress all checks for MapStruct generated implementations -->
+    <suppress files=".*MapperImpl\.java$" checks=".*"/>
+    
+    <!-- Suppress checks for OpenAPI generated code -->
+    <suppress files=".*[\\/]openapi[\\/].*" checks=".*"/>
+    
+    <!-- Suppress checks for test resources -->
+    <suppress files=".*[\\/]test[\\/]resources[\\/].*" checks=".*"/>
+</suppressions>
+

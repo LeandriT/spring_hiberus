@@ -1,0 +1,2219 @@
+# BIAN Payment Initiation - Java Spring Boot Migration Rules
+
+## Context
+You are an expert software architect specialized in banking systems with 10+ years in fintech, migrating legacy SOAP services to REST APIs aligned with BIAN (Banking Industry Architecture Network) standards. This project involves migrating a Payment Order SOAP service to a BIAN-compliant REST microservice.
+
+## SOAP to REST Migration Analysis
+
+### Legacy SOAP Service Analysis
+**WSDL**: PaymentOrderService.wsdl
+**Operations Identified**:
+1. **SubmitPaymentOrder** → Maps to BIAN **Initiate** operation
+2. **GetPaymentOrderStatus** → Maps to BIAN **Retrieve Status** operation
+
+### SOAP to BIAN Field Mapping
+
+| SOAP Field | BIAN REST Field | Type | Notes |
+|------------|-----------------|------|-------|
+| externalId | externalReference | string | Client-provided reference |
+| debtorIban | debtorAccount.iban | string | Payer account identifier |
+| creditorIban | creditorAccount.iban | string | Payee account identifier |
+| amount | instructedAmount.amount | decimal | Payment amount |
+| currency | instructedAmount.currency | string | ISO 4217 currency code |
+| remittanceInfo | remittanceInformation | string | Payment purpose/description |
+| requestedExecutionDate | requestedExecutionDate | date | ISO 8601 date format |
+| paymentOrderId | paymentOrderReference | string | BIAN-compliant reference (PO-xxxx) |
+| status | paymentOrderStatus | enum | SOAP: ACCEPTED, SETTLED, REJECTED<br>BIAN: INITIATED, PENDING, PROCESSED, COMPLETED, FAILED, CANCELLED |
+| lastUpdate | lastUpdated | datetime | ISO 8601 datetime format |
+
+### Status Mapping Strategy
+
+```java
+// SOAP Legacy Status → BIAN Status
+ACCEPTED    → INITIATED
+PENDING     → PENDING
+PROCESSING  → PROCESSED
+SETTLED     → COMPLETED
+REJECTED    → FAILED
+CANCELLED   → CANCELLED
+```
+
+### Key Migration Decisions
+1. **externalId** becomes **externalReference** (keeps external system traceability)
+2. **IBAN** fields wrapped in account objects for better structure
+3. **amount + currency** combined into **instructedAmount** object (ISO 20022 compliant)
+4. **paymentOrderId** renamed to **paymentOrderReference** (BIAN naming)
+5. Status values normalized to BIAN lifecycle
+6. Added missing fields required by BIAN (createdAt, updatedAt)
+
+## Project Specifications
+- **BIAN Service Domain**: Payment Initiation
+- **Behavior Qualifier**: PaymentOrder
+- **Migration**: SOAP (legacy) → REST (BIAN-aligned)
+- **Architecture**: Hexagonal (Ports & Adapters)
+- **Approach**: Contract-First with OpenAPI 3.0
+- **Stack**: Java 17+, Spring Boot 3+, Spring MVC, H2 Database, Gradle, MapStruct
+
+## Core Principles
+
+### 1. BIAN Alignment (Critical)
+- **Service Domain Naming**: Always use `payment-initiation` as the base path
+- **Behavior Qualifier**: PaymentOrder is the main BQ
+- **Resource Naming**: Use BIAN nomenclature
+  - Control Record (CR): PaymentOrder instance
+  - Use `cr-reference-id` for the main resource identifier
+- **Standard Operations**: Follow BIAN service operations
+  - `Initiate`: POST to create new payment order
+  - `Retrieve`: GET to fetch payment order or status
+  - `Update`: PUT/PATCH to modify (if needed)
+  - `Execute`: POST to trigger execution (if applicable)
+
+### 2. API Design Patterns
+
+#### Endpoint Structure
+```
+POST   /payment-initiation/payment-orders              # Initiate
+GET    /payment-initiation/payment-orders/{id}         # Retrieve
+GET    /payment-initiation/payment-orders/{id}/status  # Retrieve Status
+```
+
+#### Request/Response Standards
+- Use RFC 7807 (`application/problem+json`) for errors
+- Follow BIAN JSON schema conventions:
+  ```json
+  {
+    "paymentOrderReference": "PO-2024-001",
+    "paymentInitiationTransaction": { ... },
+    "payerReference": "CUST-123",
+    "payeeReference": "CUST-456",
+    "amount": { "value": 1000.00, "currency": "USD" },
+    "paymentOrderStatus": "INITIATED"
+  }
+  ```
+
+#### HTTP Status Codes (BIAN-aligned)
+- `201 Created`: Successful Initiate (POST new resource)
+- `200 OK`: Successful Retrieve (GET), Update (PUT/PATCH), or Execute
+- `204 No Content`: Successful DELETE or operation with no response body
+- `400 Bad Request`: Validation errors, malformed request
+- `404 Not Found`: Resource not found
+- `409 Conflict`: Idempotency violation, business rule conflict
+- `422 Unprocessable Entity`: Semantic errors (valid format, invalid business logic)
+- `500 Internal Server Error`: System errors, unexpected failures
+- `503 Service Unavailable`: Temporary service issues
+
+### 3. Hexagonal Architecture (Mandatory)
+
+#### Package Structure
+```
+com.hiberus.banking.payment
+├── domain/                          # Core business logic (framework-independent)
+│   ├── model/
+│   │   ├── PaymentOrder.java       # Aggregate root
+│   │   ├── PaymentAmount.java      # Value object
+│   │   ├── PaymentStatus.java      # Enum
+│   │   ├── PayerReference.java     # Value object
+│   │   └── PayeeReference.java     # Value object
+│   ├── port/
+│   │   ├── in/                     # Input ports (use cases)
+│   │   │   ├── InitiatePaymentOrderUseCase.java
+│   │   │   ├── RetrievePaymentOrderUseCase.java
+│   │   │   └── RetrievePaymentOrderStatusUseCase.java
+│   │   └── out/                    # Output ports (repositories, external services)
+│   │       ├── PaymentOrderRepository.java
+│   │       └── PaymentValidationPort.java
+│   ├── exception/
+│   │   ├── PaymentOrderNotFoundException.java
+│   │   ├── InvalidPaymentException.java
+│   │   └── DomainException.java
+│   └── service/                    # Domain services
+│       └── PaymentOrderDomainService.java
+├── application/                     # Application services (orchestration)
+│   ├── service/
+│   │   ├── InitiatePaymentOrderService.java
+│   │   ├── RetrievePaymentOrderService.java
+│   │   └── RetrievePaymentOrderStatusService.java
+│   └── mapper/
+│       ├── PaymentOrderMapper.java              # MapStruct interface
+│       └── PaymentOrderMapperImpl.java          # Generated by MapStruct
+├── adapter/                         # Adapters (infrastructure)
+│   ├── in/
+│   │   ├── rest/
+│   │   │   ├── PaymentInitiationController.java
+│   │   │   ├── dto/               # Generated from OpenAPI
+│   │   │   │   ├── InitiatePaymentOrderRequest.java
+│   │   │   │   ├── InitiatePaymentOrderResponse.java
+│   │   │   │   ├── RetrievePaymentOrderResponse.java
+│   │   │   │   └── PaymentOrderStatusResponse.java
+│   │   │   └── mapper/
+│   │   │       └── PaymentOrderRestMapper.java  # MapStruct for DTO ↔ Domain
+│   │   └── config/
+│   │       └── OpenApiConfig.java
+│   └── out/
+│       ├── persistence/
+│       │   ├── PaymentOrderRepositoryAdapter.java
+│       │   ├── entity/
+│       │   │   └── PaymentOrderEntity.java
+│       │   ├── jpa/
+│       │   │   └── PaymentOrderJpaRepository.java  # Spring Data JPA
+│       │   └── mapper/
+│       │       └── PaymentOrderPersistenceMapper.java  # MapStruct for Entity ↔ Domain
+│       └── external/
+│           └── LegacySoapClientAdapter.java  # If needed for transitional period
+└── config/                          # Spring configuration
+    ├── WebMvcConfig.java
+    ├── JpaConfig.java
+    ├── H2ConsoleConfig.java
+    └── SecurityConfig.java
+```
+
+#### Key Rules
+- **Domain Layer**: NEVER import Spring or framework-specific annotations
+- **Ports**: Define interfaces in domain layer, implement in adapters
+- **Dependencies**: Always point inward (adapter → application → domain)
+- **Value Objects**: Immutable, validation in constructor
+- **Aggregates**: PaymentOrder is the aggregate root, enforce invariants
+- **MapStruct**: Use in application and adapter layers, NEVER in domain
+
+### 4. Contract-First Development
+
+#### OpenAPI Generation with Gradle
+```yaml
+# openapi.yaml structure
+openapi: 3.0.3
+info:
+  title: BIAN Payment Initiation API
+  version: 1.0.0
+  description: Payment Order management aligned with BIAN Service Domain
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /payment-initiation/payment-orders:
+    post:
+      operationId: initiatePaymentOrder
+      tags: [Payment Initiation]
+      summary: Initiate a new payment order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiatePaymentOrderRequest'
+      responses:
+        '201':
+          description: Payment order successfully initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiatePaymentOrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  
+  /payment-initiation/payment-orders/{id}:
+    get:
+      operationId: retrievePaymentOrder
+      tags: [Payment Initiation]
+      summary: Retrieve payment order details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment order retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievePaymentOrderResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  
+  /payment-initiation/payment-orders/{id}/status:
+    get:
+      operationId: retrievePaymentOrderStatus
+      tags: [Payment Initiation]
+      summary: Retrieve payment order status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment order status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentOrderStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  schemas:
+    InitiatePaymentOrderRequest:
+      type: object
+      required: 
+        - payerReference
+        - payeeReference
+        - amount
+      properties:
+        payerReference:
+          type: string
+          description: Reference to the payer (customer ID)
+          example: "CUST-12345"
+        payeeReference:
+          type: string
+          description: Reference to the payee (beneficiary ID)
+          example: "CUST-67890"
+        amount:
+          $ref: '#/components/schemas/PaymentAmount'
+        paymentPurpose:
+          type: string
+          description: Purpose of the payment
+          example: "Invoice payment"
+        paymentDate:
+          type: string
+          format: date
+          description: Requested payment date
+          example: "2024-11-20"
+    
+    InitiatePaymentOrderResponse:
+      type: object
+      properties:
+        paymentOrderReference:
+          type: string
+          description: BIAN-compliant payment order reference
+          example: "PO-2024-001234"
+        paymentOrderStatus:
+          type: string
+          enum: [INITIATED, PENDING, PROCESSED, COMPLETED, FAILED, CANCELLED]
+        payerReference:
+          type: string
+        payeeReference:
+          type: string
+        amount:
+          $ref: '#/components/schemas/PaymentAmount'
+        createdAt:
+          type: string
+          format: date-time
+    
+    RetrievePaymentOrderResponse:
+      type: object
+      properties:
+        paymentOrderReference:
+          type: string
+        paymentOrderStatus:
+          type: string
+          enum: [INITIATED, PENDING, PROCESSED, COMPLETED, FAILED, CANCELLED]
+        payerReference:
+          type: string
+        payeeReference:
+          type: string
+        amount:
+          $ref: '#/components/schemas/PaymentAmount'
+        paymentPurpose:
+          type: string
+        paymentDate:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    
+    PaymentOrderStatusResponse:
+      type: object
+      properties:
+        paymentOrderReference:
+          type: string
+        paymentOrderStatus:
+          type: string
+          enum: [INITIATED, PENDING, PROCESSED, COMPLETED, FAILED, CANCELLED]
+        statusReason:
+          type: string
+          description: Reason for current status
+        lastUpdated:
+          type: string
+          format: date-time
+    
+    PaymentAmount:
+      type: object
+      required:
+        - value
+        - currency
+      properties:
+        value:
+          type: number
+          format: double
+          minimum: 0.01
+          example: 1500.50
+        currency:
+          type: string
+          enum: [USD, EUR, GBP, JPY]
+          example: "USD"
+    
+    ProblemDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
+  
+  responses:
+    BadRequest:
+      description: Bad request - validation errors
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+```
+
+#### Gradle Configuration (build.gradle)
+```groovy
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.0'
+    id 'io.spring.dependency-management' version '1.1.4'
+    id 'org.openapi.generator' version '7.0.1'
+    id 'checkstyle'
+    id 'com.github.spotbugs' version '6.0.0'
+    id 'jacoco'
+}
+
+group = 'com.hiberus.banking'
+version = '1.0.0'
+sourceCompatibility = '17'
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    mapstructVersion = '1.5.5.Final'
+    lombokVersion = '1.18.30'
+    openApiVersion = '2.2.0'
+}
+
+dependencies {
+    // Spring Boot Starters
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    
+    // H2 Database
+    runtimeOnly 'com.h2database:h2'
+    
+    // OpenAPI
+    implementation "org.springdoc:springdoc-openapi-starter-webmvc-ui:${openApiVersion}"
+    
+    // MapStruct
+    implementation "org.mapstruct:mapstruct:${mapstructVersion}"
+    annotationProcessor "org.mapstruct:mapstruct-processor:${mapstructVersion}"
+    
+    // Lombok
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+    
+    // Lombok + MapStruct compatibility
+    annotationProcessor "org.projectlombok:lombok-mapstruct-binding:0.2.0"
+    
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webflux'  // For WebTestClient
+    testImplementation 'io.rest-assured:rest-assured:5.4.0'
+    testImplementation 'org.assertj:assertj-core'
+    
+    // Test Lombok
+    testCompileOnly "org.projectlombok:lombok:${lombokVersion}"
+    testAnnotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+}
+
+// OpenAPI Generator Task
+openApiGenerate {
+    generatorName = 'spring'
+    inputSpec = "$projectDir/src/main/resources/openapi.yaml"
+    outputDir = "$buildDir/generated"
+    apiPackage = 'com.hiberus.banking.payment.adapter.in.rest.api'
+    modelPackage = 'com.hiberus.banking.payment.adapter.in.rest.dto'
+    invokerPackage = 'com.hiberus.banking.payment.adapter.in.rest.invoker'
+    configOptions = [
+        interfaceOnly: 'true',
+        useSpringBoot3: 'true',
+        useTags: 'true',
+        dateLibrary: 'java8',
+        serializationLibrary: 'jackson',
+        hideGenerationTimestamp: 'true'
+    ]
+}
+
+// Add generated sources to source sets
+sourceSets {
+    main {
+        java {
+            srcDirs += "$buildDir/generated/src/main/java"
+        }
+    }
+}
+
+// Compile depends on generation
+compileJava.dependsOn tasks.openApiGenerate
+
+// JaCoCo Configuration
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.80
+            }
+        }
+    }
+}
+
+// Checkstyle Configuration
+checkstyle {
+    toolVersion = '10.12.5'
+    configFile = file("${project.rootDir}/config/checkstyle/checkstyle.xml")
+}
+
+// SpotBugs Configuration
+spotbugs {
+    effort = 'max'
+    reportLevel = 'high'
+}
+
+tasks.named('spotbugsMain') {
+    reports {
+        html {
+            required = true
+        }
+        xml {
+            required = false
+        }
+    }
+}
+
+// Test Configuration
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+
+// Build task order
+check.dependsOn jacocoTestCoverageVerification
+```
+
+#### Controller Implementation (Spring MVC)
+```java
+@RestController
+@RequiredArgsConstructor
+@Slf4j
+public class PaymentInitiationController implements PaymentInitiationApi {
+    
+    private final InitiatePaymentOrderUseCase initiateUseCase;
+    private final RetrievePaymentOrderUseCase retrieveUseCase;
+    private final RetrievePaymentOrderStatusUseCase retrieveStatusUseCase;
+    private final PaymentOrderRestMapper mapper;
+    
+    @Override
+    public ResponseEntity<InitiatePaymentOrderResponse> initiatePaymentOrder(
+            InitiatePaymentOrderRequest request) {
+        
+        log.info("Initiating payment order for payer: {}", request.getPayerReference());
+        
+        PaymentOrder domainOrder = mapper.toDomain(request);
+        PaymentOrder initiatedOrder = initiateUseCase.initiate(domainOrder);
+        InitiatePaymentOrderResponse response = mapper.toInitiateResponse(initiatedOrder);
+        
+        log.info("Payment order initiated successfully: {}", response.getPaymentOrderReference());
+        
+        return ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(response);
+    }
+    
+    @Override
+    public ResponseEntity<RetrievePaymentOrderResponse> retrievePaymentOrder(String id) {
+        
+        log.info("Retrieving payment order: {}", id);
+        
+        PaymentOrder paymentOrder = retrieveUseCase.retrieve(id);
+        RetrievePaymentOrderResponse response = mapper.toRetrieveResponse(paymentOrder);
+        
+        return ResponseEntity.ok(response);
+    }
+    
+    @Override
+    public ResponseEntity<PaymentOrderStatusResponse> retrievePaymentOrderStatus(String id) {
+        
+        log.info("Retrieving payment order status: {}", id);
+        
+        PaymentOrder paymentOrder = retrieveStatusUseCase.retrieveStatus(id);
+        PaymentOrderStatusResponse response = mapper.toStatusResponse(paymentOrder);
+        
+        return ResponseEntity.ok(response);
+    }
+}
+```
+
+### 5. Spring MVC with H2 Database
+
+#### Application Configuration (application.yml)
+```yaml
+spring:
+  application:
+    name: payment-initiation-service
+  
+  # H2 Database Configuration
+  datasource:
+    url: jdbc:h2:mem:paymentdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+      settings:
+        web-allow-others: false
+  
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+  
+  # Jackson Configuration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+# Server Configuration
+server:
+  port: 8080
+  servlet:
+    context-path: /
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-exception: false
+    include-stacktrace: never
+
+# Management / Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      service-domain: payment-initiation
+
+# Logging
+logging:
+  level:
+    com.hiberus.banking: DEBUG
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+```
+
+#### JPA Entity Example
+```java
+@Entity
+@Table(name = "payment_orders")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class PaymentOrderEntity {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+    
+    @Column(name = "payment_order_reference", nullable = false, unique = true, length = 50)
+    private String paymentOrderReference;
+    
+    @Column(name = "payer_reference", nullable = false, length = 50)
+    private String payerReference;
+    
+    @Column(name = "payee_reference", nullable = false, length = 50)
+    private String payeeReference;
+    
+    @Column(name = "amount", nullable = false, precision = 19, scale = 2)
+    private BigDecimal amount;
+    
+    @Column(name = "currency", nullable = false, length = 3)
+    private String currency;
+    
+    @Column(name = "payment_purpose", length = 255)
+    private String paymentPurpose;
+    
+    @Column(name = "payment_date")
+    private LocalDate paymentDate;
+    
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private PaymentStatusEntity status;
+    
+    @Column(name = "status_reason", length = 500)
+    private String statusReason;
+    
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
+    
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+    
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        if (status == null) {
+            status = PaymentStatusEntity.INITIATED;
+        }
+    }
+    
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+}
+
+@Getter
+@RequiredArgsConstructor
+enum PaymentStatusEntity {
+    INITIATED("Payment order has been initiated"),
+    PENDING("Payment order is pending processing"),
+    PROCESSED("Payment order has been processed"),
+    COMPLETED("Payment order completed successfully"),
+    FAILED("Payment order failed"),
+    CANCELLED("Payment order has been cancelled");
+    
+    private final String description;
+}
+```
+
+#### Spring Data JPA Repository
+```java
+@Repository
+public interface PaymentOrderJpaRepository extends JpaRepository<PaymentOrderEntity, UUID> {
+    
+    Optional<PaymentOrderEntity> findByPaymentOrderReference(String paymentOrderReference);
+    
+    List<PaymentOrderEntity> findByPayerReference(String payerReference);
+    
+    List<PaymentOrderEntity> findByStatus(PaymentStatusEntity status);
+    
+    @Query("SELECT p FROM PaymentOrderEntity p WHERE p.createdAt BETWEEN :startDate AND :endDate")
+    List<PaymentOrderEntity> findByDateRange(
+        @Param("startDate") LocalDateTime startDate, 
+        @Param("endDate") LocalDateTime endDate
+    );
+    
+    boolean existsByPaymentOrderReference(String paymentOrderReference);
+}
+```
+
+#### Repository Adapter Implementation
+```java
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class PaymentOrderRepositoryAdapter implements PaymentOrderRepository {
+    
+    private final PaymentOrderJpaRepository jpaRepository;
+    private final PaymentOrderPersistenceMapper persistenceMapper;
+    
+    @Override
+    public PaymentOrder save(PaymentOrder paymentOrder) {
+        log.debug("Saving payment order: {}", paymentOrder.getPaymentOrderReference());
+        
+        PaymentOrderEntity entity = persistenceMapper.toEntity(paymentOrder);
+        PaymentOrderEntity savedEntity = jpaRepository.save(entity);
+        
+        log.debug("Payment order saved with ID: {}", savedEntity.getId());
+        return persistenceMapper.toDomain(savedEntity);
+    }
+    
+    @Override
+    public Optional<PaymentOrder> findByReference(String paymentOrderReference) {
+        log.debug("Finding payment order by reference: {}", paymentOrderReference);
+        
+        return jpaRepository.findByPaymentOrderReference(paymentOrderReference)
+            .map(persistenceMapper::toDomain);
+    }
+    
+    @Override
+    public boolean existsByReference(String paymentOrderReference) {
+        return jpaRepository.existsByPaymentOrderReference(paymentOrderReference);
+    }
+    
+    @Override
+    public List<PaymentOrder> findAll() {
+        return jpaRepository.findAll().stream()
+            .map(persistenceMapper::toDomain)
+            .collect(Collectors.toList());
+    }
+}
+```
+
+#### H2 Console Configuration
+```java
+@Configuration
+public class H2ConsoleConfig {
+    
+    @Bean
+    public ServletRegistrationBean<WebServlet> h2Console() {
+        ServletRegistrationBean<WebServlet> registration = 
+            new ServletRegistrationBean<>(new WebServlet());
+        registration.addUrlMappings("/h2-console/*");
+        return registration;
+    }
+}
+```
+
+#### Data Initialization (Optional - for testing)
+```java
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class DataInitializer {
+    
+    private final PaymentOrderJpaRepository repository;
+    
+    @EventListener(ApplicationReadyEvent.class)
+    public void loadSampleData() {
+        if (repository.count() == 0) {
+            log.info("Loading sample payment orders...");
+            
+            PaymentOrderEntity order1 = PaymentOrderEntity.builder()
+                .paymentOrderReference("PO-2024-001")
+                .payerReference("CUST-12345")
+                .payeeReference("CUST-67890")
+                .amount(new BigDecimal("1500.50"))
+                .currency("USD")
+                .paymentPurpose("Invoice payment")
+                .paymentDate(LocalDate.now())
+                .status(PaymentStatusEntity.INITIATED)
+                .build();
+            
+            repository.save(order1);
+            log.info("Sample data loaded successfully");
+        }
+    }
+}
+```
+
+### 6. MapStruct Mappers (Three Layers)
+
+MapStruct is used for clean transformation between layers. There are THREE types of mappers:
+
+#### 1. REST Mapper (Adapter Layer: DTO ↔ Domain)
+```java
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR)
+public interface PaymentOrderRestMapper {
+    
+    // Request DTO → Domain
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "paymentOrderReference", ignore = true)
+    @Mapping(target = "status", constant = "INITIATED")
+    @Mapping(target = "createdAt", expression = "java(java.time.LocalDateTime.now())")
+    @Mapping(target = "updatedAt", ignore = true)
+    PaymentOrder toDomain(InitiatePaymentOrderRequest request);
+    
+    // Domain → Response DTO (Initiate)
+    @Mapping(source = "id.value", target = "paymentOrderReference")
+    @Mapping(source = "status", target = "paymentOrderStatus")
+    InitiatePaymentOrderResponse toInitiateResponse(PaymentOrder paymentOrder);
+    
+    // Domain → Response DTO (Retrieve)
+    @Mapping(source = "id.value", target = "paymentOrderReference")
+    @Mapping(source = "status", target = "paymentOrderStatus")
+    RetrievePaymentOrderResponse toRetrieveResponse(PaymentOrder paymentOrder);
+    
+    // Domain → Response DTO (Status)
+    @Mapping(source = "id.value", target = "paymentOrderReference")
+    @Mapping(source = "status", target = "paymentOrderStatus")
+    @Mapping(source = "updatedAt", target = "lastUpdated")
+    PaymentOrderStatusResponse toStatusResponse(PaymentOrder paymentOrder);
+    
+    // Value Object mappings
+    @Mapping(source = "value", target = "value")
+    @Mapping(source = "currency", target = "currency")
+    PaymentAmount toPaymentAmount(com.hiberus.banking.payment.adapter.in.rest.dto.PaymentAmount dtoAmount);
+    
+    @Mapping(source = "value", target = "value")
+    @Mapping(source = "currency", target = "currency")
+    com.hiberus.banking.payment.adapter.in.rest.dto.PaymentAmount toPaymentAmountDto(PaymentAmount domainAmount);
+}
+```
+
+#### 2. Persistence Mapper (Adapter Layer: Domain ↔ Entity)
+```java
+@Mapper(componentModel = "spring", 
+        unmappedTargetPolicy = ReportingPolicy.ERROR,
+        uses = {PaymentStatusMapper.class})
+public interface PaymentOrderPersistenceMapper {
+    
+    // Domain → Entity
+    @Mapping(source = "id.value", target = "paymentOrderReference")
+    @Mapping(source = "payerReference.value", target = "payerReference")
+    @Mapping(source = "payeeReference.value", target = "payeeReference")
+    @Mapping(source = "amount.value", target = "amount")
+    @Mapping(source = "amount.currency", target = "currency")
+    @Mapping(source = "status", target = "status")
+    @Mapping(target = "id", ignore = true)  // Let JPA generate
+    PaymentOrderEntity toEntity(PaymentOrder domain);
+    
+    // Entity → Domain
+    @Mapping(source = "paymentOrderReference", target = "id.value")
+    @Mapping(source = "payerReference", target = "payerReference.value")
+    @Mapping(source = "payeeReference", target = "payeeReference.value")
+    @Mapping(source = "amount", target = "amount.value")
+    @Mapping(source = "currency", target = "amount.currency")
+    PaymentOrder toDomain(PaymentOrderEntity entity);
+    
+    // Custom mapping for status
+    default PaymentStatus mapStatus(PaymentStatusEntity entityStatus) {
+        return PaymentStatus.valueOf(entityStatus.name());
+    }
+    
+    default PaymentStatusEntity mapStatus(PaymentStatus domainStatus) {
+        return PaymentStatusEntity.valueOf(domainStatus.name());
+    }
+}
+```
+
+#### 3. Application Mapper (Optional: Complex transformations)
+```java
+@Mapper(componentModel = "spring")
+public interface PaymentOrderApplicationMapper {
+    
+    // For complex business logic transformations
+    @Mapping(target = "enrichedData", expression = "java(enrichData(source))")
+    PaymentOrder enrichForProcessing(PaymentOrder source);
+    
+    default String enrichData(PaymentOrder order) {
+        // Complex business logic here
+        return "ENRICHED-" + order.getPaymentOrderReference();
+    }
+}
+```
+
+#### MapStruct Configuration Best Practices
+```java
+@MapperConfig(
+    componentModel = "spring",
+    unmappedTargetPolicy = ReportingPolicy.ERROR,  // Fail on unmapped fields
+    unmappedSourcePolicy = ReportingPolicy.WARN,    // Warn on unmapped sources
+    mappingInheritanceStrategy = MappingInheritanceStrategy.AUTO_INHERIT_FROM_CONFIG
+)
+public interface CentralMapperConfig {
+}
+
+// Then use it in mappers
+@Mapper(config = CentralMapperConfig.class)
+public interface PaymentOrderRestMapper {
+    // ... mappings
+}
+```
+
+#### Testing MapStruct Mappers
+```java
+@SpringBootTest
+class PaymentOrderRestMapperTest {
+    
+    @Autowired
+    private PaymentOrderRestMapper mapper;
+    
+    @Test
+    @DisplayName("Should map InitiatePaymentOrderRequest to PaymentOrder domain")
+    void shouldMapRequestToDomain() {
+        // Given
+        InitiatePaymentOrderRequest request = new InitiatePaymentOrderRequest()
+            .payerReference("CUST-123")
+            .payeeReference("CUST-456")
+            .amount(new com.hiberus.banking.payment.adapter.in.rest.dto.PaymentAmount()
+                .value(1000.0)
+                .currency("USD"))
+            .paymentPurpose("Test payment");
+        
+        // When
+        PaymentOrder domain = mapper.toDomain(request);
+        
+        // Then
+        assertThat(domain).isNotNull();
+        assertThat(domain.getPayerReference().getValue()).isEqualTo("CUST-123");
+        assertThat(domain.getPayeeReference().getValue()).isEqualTo("CUST-456");
+        assertThat(domain.getAmount().getValue()).isEqualByComparingTo("1000.0");
+        assertThat(domain.getAmount().getCurrency()).isEqualTo(Currency.USD);
+        assertThat(domain.getStatus()).isEqualTo(PaymentStatus.INITIATED);
+    }
+    
+    @Test
+    @DisplayName("Should map PaymentOrder domain to InitiatePaymentOrderResponse")
+    void shouldMapDomainToResponse() {
+        // Given
+        PaymentOrder domain = PaymentOrderMother.valid();
+        
+        // When
+        InitiatePaymentOrderResponse response = mapper.toInitiateResponse(domain);
+        
+        // Then
+        assertThat(response).isNotNull();
+        assertThat(response.getPaymentOrderReference()).isEqualTo(domain.getId().getValue());
+        assertThat(response.getPaymentOrderStatus()).isEqualTo(domain.getStatus().name());
+    }
+}
+```
+
+### 7. Testing Strategy with Spring MVC and WebTestClient
+
+#### Unit Tests (Domain & Application Layer)
+```java
+@ExtendWith(MockitoExtension.class)
+class InitiatePaymentOrderServiceTest {
+    
+    @Mock
+    private PaymentOrderRepository repository;
+    
+    @Mock
+    private PaymentValidationPort validationPort;
+    
+    @InjectMocks
+    private InitiatePaymentOrderService service;
+    
+    @Test
+    @DisplayName("Should initiate payment order when valid")
+    void shouldInitiatePaymentOrderWhenValid() {
+        // Given
+        PaymentOrder order = PaymentOrderMother.valid();
+        when(validationPort.validate(any())).thenReturn(true);
+        when(repository.save(any())).thenReturn(order);
+        
+        // When
+        PaymentOrder result = service.initiate(order);
+        
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getStatus()).isEqualTo(PaymentStatus.INITIATED);
+        assertThat(result.getPaymentOrderReference()).isNotNull();
+        
+        verify(validationPort).validate(order);
+        verify(repository).save(any(PaymentOrder.class));
+    }
+    
+    @Test
+    @DisplayName("Should throw InvalidPaymentException when validation fails")
+    void shouldThrowExceptionWhenValidationFails() {
+        // Given
+        PaymentOrder order = PaymentOrderMother.withInvalidAmount();
+        when(validationPort.validate(any())).thenReturn(false);
+        
+        // When & Then
+        assertThatThrownBy(() -> service.initiate(order))
+            .isInstanceOf(InvalidPaymentException.class)
+            .hasMessageContaining("validation failed");
+        
+        verify(validationPort).validate(order);
+        verify(repository, never()).save(any());
+    }
+    
+    @Test
+    @DisplayName("Should generate unique payment order reference")
+    void shouldGenerateUniqueReference() {
+        // Given
+        PaymentOrder order1 = PaymentOrderMother.valid();
+        PaymentOrder order2 = PaymentOrderMother.valid();
+        when(validationPort.validate(any())).thenReturn(true);
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        
+        // When
+        PaymentOrder result1 = service.initiate(order1);
+        PaymentOrder result2 = service.initiate(order2);
+        
+        // Then
+        assertThat(result1.getPaymentOrderReference())
+            .isNotEqualTo(result2.getPaymentOrderReference());
+    }
+}
+```
+
+#### Integration Tests with WebTestClient (Recommended for Spring MVC)
+```java
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureWebTestClient
+class PaymentInitiationIntegrationTest {
+    
+    @Autowired
+    private WebTestClient webTestClient;
+    
+    @Autowired
+    private PaymentOrderJpaRepository repository;
+    
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+    }
+    
+    @Test
+    @DisplayName("POST /payment-initiation/payment-orders - Should return 201 Created")
+    void shouldInitiatePaymentOrderSuccessfully() {
+        // Given
+        InitiatePaymentOrderRequest request = InitiatePaymentOrderRequest.builder()
+            .payerReference("CUST-12345")
+            .payeeReference("CUST-67890")
+            .amount(PaymentAmountDto.builder()
+                .value(1500.50)
+                .currency("USD")
+                .build())
+            .paymentPurpose("Invoice payment")
+            .paymentDate(LocalDate.now())
+            .build();
+        
+        // When & Then
+        webTestClient.post()
+            .uri("/payment-initiation/payment-orders")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(request)
+            .exchange()
+            .expectStatus().isCreated()
+            .expectHeader().exists("Location")
+            .expectBody(InitiatePaymentOrderResponse.class)
+            .value(response -> {
+                assertThat(response).isNotNull();
+                assertThat(response.getPaymentOrderReference()).startsWith("PO-");
+                assertThat(response.getPaymentOrderStatus()).isEqualTo("INITIATED");
+                assertThat(response.getPayerReference()).isEqualTo("CUST-12345");
+                assertThat(response.getPayeeReference()).isEqualTo("CUST-67890");
+                assertThat(response.getAmount().getValue()).isEqualTo(1500.50);
+                assertThat(response.getCreatedAt()).isNotNull();
+            });
+        
+        // Verify database
+        assertThat(repository.count()).isEqualTo(1);
+    }
+    
+    @Test
+    @DisplayName("GET /payment-initiation/payment-orders/{id} - Should return 200 OK")
+    void shouldRetrievePaymentOrderSuccessfully() {
+        // Given - Create a payment order first
+        PaymentOrderEntity entity = createSampleEntity();
+        PaymentOrderEntity saved = repository.save(entity);
+        String reference = saved.getPaymentOrderReference();
+        
+        // When & Then
+        webTestClient.get()
+            .uri("/payment-initiation/payment-orders/{id}", reference)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(RetrievePaymentOrderResponse.class)
+            .value(response -> {
+                assertThat(response.getPaymentOrderReference()).isEqualTo(reference);
+                assertThat(response.getPaymentOrderStatus()).isEqualTo("INITIATED");
+                assertThat(response.getPayerReference()).isEqualTo("CUST-12345");
+                assertThat(response.getAmount().getValue()).isEqualTo(1500.50);
+            });
+    }
+    
+    @Test
+    @DisplayName("GET /payment-initiation/payment-orders/{id}/status - Should return 200 OK")
+    void shouldRetrievePaymentOrderStatusSuccessfully() {
+        // Given
+        PaymentOrderEntity entity = createSampleEntity();
+        PaymentOrderEntity saved = repository.save(entity);
+        String reference = saved.getPaymentOrderReference();
+        
+        // When & Then
+        webTestClient.get()
+            .uri("/payment-initiation/payment-orders/{id}/status", reference)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(PaymentOrderStatusResponse.class)
+            .value(response -> {
+                assertThat(response.getPaymentOrderReference()).isEqualTo(reference);
+                assertThat(response.getPaymentOrderStatus()).isEqualTo("INITIATED");
+                assertThat(response.getLastUpdated()).isNotNull();
+            });
+    }
+    
+    @Test
+    @DisplayName("GET /payment-initiation/payment-orders/{id} - Should return 404 Not Found")
+    void shouldReturn404WhenPaymentOrderNotFound() {
+        // When & Then
+        webTestClient.get()
+            .uri("/payment-initiation/payment-orders/{id}", "NON-EXISTENT")
+            .exchange()
+            .expectStatus().isNotFound()
+            .expectBody()
+            .jsonPath("$.title").isEqualTo("Payment Order Not Found")
+            .jsonPath("$.status").isEqualTo(404)
+            .jsonPath("$.detail").exists();
+    }
+    
+    @Test
+    @DisplayName("POST /payment-initiation/payment-orders - Should return 400 Bad Request for invalid data")
+    void shouldReturn400ForInvalidRequest() {
+        // Given - Invalid request (missing required fields)
+        String invalidRequest = """
+            {
+                "payerReference": "CUST-123"
+            }
+            """;
+        
+        // When & Then
+        webTestClient.post()
+            .uri("/payment-initiation/payment-orders")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(invalidRequest)
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.title").exists()
+            .jsonPath("$.status").isEqualTo(400);
+    }
+    
+    @Test
+    @DisplayName("Should handle concurrent payment order creation")
+    void shouldHandleConcurrentCreation() throws Exception {
+        // Given
+        int numberOfThreads = 5;
+        ExecutorService executorService = Executors.newFixedThreadPool(numberOfThreads);
+        CountDownLatch latch = new CountDownLatch(numberOfThreads);
+        
+        // When
+        for (int i = 0; i < numberOfThreads; i++) {
+            final int index = i;
+            executorService.submit(() -> {
+                try {
+                    InitiatePaymentOrderRequest request = createRequest("PAYER-" + index);
+                    webTestClient.post()
+                        .uri("/payment-initiation/payment-orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(request)
+                        .exchange()
+                        .expectStatus().isCreated();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        latch.await(10, TimeUnit.SECONDS);
+        executorService.shutdown();
+        
+        // Then
+        assertThat(repository.count()).isEqualTo(numberOfThreads);
+    }
+    
+    // Helper methods
+    private PaymentOrderEntity createSampleEntity() {
+        return PaymentOrderEntity.builder()
+            .paymentOrderReference("PO-2024-TEST-001")
+            .payerReference("CUST-12345")
+            .payeeReference("CUST-67890")
+            .amount(new BigDecimal("1500.50"))
+            .currency("USD")
+            .paymentPurpose("Test payment")
+            .paymentDate(LocalDate.now())
+            .status(PaymentStatusEntity.INITIATED)
+            .build();
+    }
+    
+    private InitiatePaymentOrderRequest createRequest(String payerRef) {
+        return InitiatePaymentOrderRequest.builder()
+            .payerReference(payerRef)
+            .payeeReference("CUST-67890")
+            .amount(PaymentAmountDto.builder()
+                .value(1000.0)
+                .currency("USD")
+                .build())
+            .paymentPurpose("Concurrent test")
+            .build();
+    }
+}
+```
+
+#### Alternative: REST Assured for Integration Tests
+```java
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class PaymentInitiationRestAssuredTest {
+    
+    @LocalServerPort
+    private int port;
+    
+    @Autowired
+    private PaymentOrderJpaRepository repository;
+    
+    @BeforeEach
+    void setUp() {
+        RestAssured.port = port;
+        RestAssured.basePath = "/payment-initiation";
+        repository.deleteAll();
+    }
+    
+    @Test
+    void shouldInitiatePaymentOrder() {
+        given()
+            .contentType(ContentType.JSON)
+            .body(createValidRequest())
+        .when()
+            .post("/payment-orders")
+        .then()
+            .statusCode(201)
+            .body("paymentOrderReference", notNullValue())
+            .body("paymentOrderStatus", equalTo("INITIATED"))
+            .body("amount.value", equalTo(1500.50f))
+            .body("amount.currency", equalTo("USD"));
+    }
+    
+    @Test
+    void shouldRetrievePaymentOrder() {
+        // Given
+        PaymentOrderEntity saved = repository.save(createSampleEntity());
+        
+        // When & Then
+        given()
+            .pathParam("id", saved.getPaymentOrderReference())
+        .when()
+            .get("/payment-orders/{id}")
+        .then()
+            .statusCode(200)
+            .body("paymentOrderReference", equalTo(saved.getPaymentOrderReference()))
+            .body("paymentOrderStatus", equalTo("INITIATED"));
+    }
+}
+```
+
+#### Test Data Builders (Object Mother Pattern)
+```java
+public class PaymentOrderMother {
+    
+    public static PaymentOrder valid() {
+        return PaymentOrder.builder()
+            .id(PaymentOrderId.generate())
+            .payerReference(PayerReference.of("CUST-12345"))
+            .payeeReference(PayeeReference.of("CUST-67890"))
+            .amount(PaymentAmount.of(1500.50, Currency.USD))
+            .paymentPurpose("Invoice payment")
+            .paymentDate(LocalDate.now())
+            .status(PaymentStatus.INITIATED)
+            .createdAt(LocalDateTime.now())
+            .build();
+    }
+    
+    public static PaymentOrder withInvalidAmount() {
+        return valid().toBuilder()
+            .amount(PaymentAmount.of(-100.00, Currency.USD))
+            .build();
+    }
+    
+    public static PaymentOrder withStatus(PaymentStatus status) {
+        return valid().toBuilder()
+            .status(status)
+            .build();
+    }
+    
+    public static PaymentOrder pending() {
+        return withStatus(PaymentStatus.PENDING);
+    }
+    
+    public static PaymentOrder completed() {
+        return withStatus(PaymentStatus.COMPLETED);
+    }
+}
+
+public class PaymentOrderEntityMother {
+    
+    public static PaymentOrderEntity valid() {
+        return PaymentOrderEntity.builder()
+            .paymentOrderReference("PO-2024-001")
+            .payerReference("CUST-12345")
+            .payeeReference("CUST-67890")
+            .amount(new BigDecimal("1500.50"))
+            .currency("USD")
+            .paymentPurpose("Invoice payment")
+            .paymentDate(LocalDate.now())
+            .status(PaymentStatusEntity.INITIATED)
+            .build();
+    }
+}
+```
+
+#### Repository Tests
+```java
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+class PaymentOrderJpaRepositoryTest {
+    
+    @Autowired
+    private PaymentOrderJpaRepository repository;
+    
+    @Autowired
+    private TestEntityManager entityManager;
+    
+    @Test
+    @DisplayName("Should save and retrieve payment order")
+    void shouldSaveAndRetrievePaymentOrder() {
+        // Given
+        PaymentOrderEntity entity = PaymentOrderEntityMother.valid();
+        
+        // When
+        PaymentOrderEntity saved = repository.save(entity);
+        entityManager.flush();
+        entityManager.clear();
+        
+        // Then
+        Optional<PaymentOrderEntity> found = repository.findByPaymentOrderReference(
+            saved.getPaymentOrderReference()
+        );
+        
+        assertThat(found).isPresent();
+        assertThat(found.get().getPayerReference()).isEqualTo("CUST-12345");
+        assertThat(found.get().getAmount()).isEqualByComparingTo("1500.50");
+    }
+    
+    @Test
+    @DisplayName("Should find payment orders by status")
+    void shouldFindByStatus() {
+        // Given
+        repository.save(PaymentOrderEntityMother.valid());
+        repository.save(PaymentOrderEntityMother.valid().toBuilder()
+            .paymentOrderReference("PO-2024-002")
+            .status(PaymentStatusEntity.COMPLETED)
+            .build());
+        entityManager.flush();
+        
+        // When
+        List<PaymentOrderEntity> initiated = repository.findByStatus(PaymentStatusEntity.INITIATED);
+        List<PaymentOrderEntity> completed = repository.findByStatus(PaymentStatusEntity.COMPLETED);
+        
+        // Then
+        assertThat(initiated).hasSize(1);
+        assertThat(completed).hasSize(1);
+    }
+}
+```
+
+### 8. Quality Gates (Mandatory - Gradle)
+
+#### JaCoCo Configuration (Gradle)
+```groovy
+// build.gradle
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+jacocoTestReport {
+    dependsOn test
+    
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
+    
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                '**/dto/**',
+                '**/entity/**',
+                '**/config/**',
+                '**/*Application.class',
+                '**/*MapperImpl.class'  // Exclude MapStruct generated classes
+            ])
+        }))
+    }
+}
+
+jacocoTestCoverageVerification {
+    dependsOn jacocoTestReport
+    
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.80
+            }
+        }
+        
+        rule {
+            element = 'CLASS'
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.70
+            }
+            excludes = [
+                '*.dto.*',
+                '*.entity.*',
+                '*.config.*',
+                '*Application',
+                '*MapperImpl'
+            ]
+        }
+    }
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+
+check.dependsOn jacocoTestCoverageVerification
+```
+
+#### Checkstyle Configuration (Gradle)
+```groovy
+// build.gradle
+checkstyle {
+    toolVersion = '10.12.5'
+    configFile = file("${project.rootDir}/config/checkstyle/checkstyle.xml")
+    configProperties = [
+        'checkstyle.suppressions.file': "${project.rootDir}/config/checkstyle/suppressions.xml"
+    ]
+}
+
+checkstyleMain {
+    source = 'src/main/java'
+    exclude '**/dto/**', '**/entity/**'  // Exclude generated code
+}
+
+checkstyleTest {
+    source = 'src/test/java'
+}
+
+tasks.withType(Checkstyle) {
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+```
+
+#### config/checkstyle/checkstyle.xml
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
+    
+    <module name="SuppressionFilter">
+        <property name="file" value="${checkstyle.suppressions.file}"/>
+    </module>
+    
+    <module name="TreeWalker">
+        <!-- Naming Conventions -->
+        <module name="TypeName">
+            <property name="format" value="^[A-Z][a-zA-Z0-9]*$"/>
+        </module>
+        
+        <module name="MethodName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+        </module>
+        
+        <module name="ConstantName">
+            <property name="format" value="^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$"/>
+        </module>
+        
+        <module name="LocalVariableName">
+            <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+        </module>
+        
+        <!-- Code Style -->
+        <module name="LeftCurly"/>
+        <module name="RightCurly"/>
+        <module name="NeedBraces"/>
+        
+        <module name="WhitespaceAround"/>
+        <module name="NoWhitespaceBefore"/>
+        
+        <!-- Imports -->
+        <module name="AvoidStarImport"/>
+        <module name="UnusedImports"/>
+        <module name="RedundantImport"/>
+        
+        <!-- Size Violations -->
+        <module name="LineLength">
+            <property name="max" value="120"/>
+        </module>
+        
+        <module name="MethodLength">
+            <property name="max" value="150"/>
+        </module>
+        
+        <!-- Complexity -->
+        <module name="CyclomaticComplexity">
+            <property name="max" value="15"/>
+        </module>
+        
+        <!-- Best Practices -->
+        <module name="EmptyBlock"/>
+        <module name="EqualsHashCode"/>
+        <module name="SimplifyBooleanExpression"/>
+        <module name="SimplifyBooleanReturn"/>
+        
+        <!-- Annotations -->
+        <module name="MissingOverride"/>
+    </module>
+</module>
+```
+
+#### SpotBugs Configuration (Gradle)
+```groovy
+// build.gradle
+spotbugs {
+    effort = 'max'
+    reportLevel = 'high'
+    excludeFilter = file("${project.rootDir}/config/spotbugs/spotbugs-exclude.xml")
+}
+
+tasks.named('spotbugsMain') {
+    reports {
+        html {
+            required = true
+            outputLocation = file("$buildDir/reports/spotbugs/main/spotbugs.html")
+        }
+        xml {
+            required = false
+        }
+    }
+}
+
+tasks.named('spotbugsTest') {
+    reports {
+        html {
+            required = true
+            outputLocation = file("$buildDir/reports/spotbugs/test/spotbugs.html")
+        }
+    }
+}
+```
+
+#### config/spotbugs/spotbugs-exclude.xml
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!-- Exclude generated code -->
+    <Match>
+        <Package name="~.*\.dto.*"/>
+    </Match>
+    
+    <Match>
+        <Package name="~.*\.entity.*"/>
+    </Match>
+    
+    <Match>
+        <Class name="~.*MapperImpl"/>
+    </Match>
+    
+    <!-- Exclude specific bugs for Lombok -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+        <Or>
+            <Class name="~.*\.domain\.model\..*"/>
+        </Or>
+    </Match>
+</FindBugsFilter>
+```
+
+#### Gradle Verification Tasks
+```groovy
+// Create custom task to run all quality checks
+tasks.register('qualityCheck') {
+    dependsOn 'checkstyleMain', 'checkstyleTest', 'spotbugsMain', 'jacocoTestCoverageVerification'
+    description = 'Run all quality checks: Checkstyle, SpotBugs, and JaCoCo'
+    group = 'verification'
+}
+
+// Make 'check' depend on quality checks
+check {
+    dependsOn 'qualityCheck'
+}
+
+// Gradle wrapper
+wrapper {
+    gradleVersion = '8.5'
+    distributionType = Wrapper.DistributionType.ALL
+}
+```
+
+#### Run Quality Checks
+```bash
+# Run all quality checks
+./gradlew check
+
+# Run individual checks
+./gradlew checkstyleMain
+./gradlew spotbugsMain
+./gradlew test jacocoTestReport
+./gradlew jacocoTestCoverageVerification
+
+# Build with quality checks
+./gradlew clean build
+
+# Generate reports
+./gradlew jacocoTestReport
+# Report: build/reports/jacoco/test/html/index.html
+
+./gradlew checkstyleMain
+# Report: build/reports/checkstyle/main.html
+
+./gradlew spotbugsMain
+# Report: build/reports/spotbugs/main/spotbugs.html
+```
+
+### 8. Domain Modeling Best Practices
+
+#### Value Objects
+```java
+@Value
+@Builder
+public class PaymentAmount {
+    BigDecimal value;
+    Currency currency;
+    
+    public static PaymentAmount of(double value, Currency currency) {
+        if (value <= 0) {
+            throw new InvalidPaymentException("Amount must be positive");
+        }
+        return new PaymentAmount(BigDecimal.valueOf(value), currency);
+    }
+}
+```
+
+#### Aggregates
+```java
+@Builder(toBuilder = true)
+@Value
+public class PaymentOrder {
+    PaymentOrderId id;
+    PayerReference payerReference;
+    PayeeReference payeeReference;
+    PaymentAmount amount;
+    PaymentStatus status;
+    LocalDateTime createdAt;
+    
+    // Business invariants
+    public PaymentOrder validate() {
+        if (status == PaymentStatus.CANCELLED && amount.getValue().compareTo(BigDecimal.ZERO) > 0) {
+            throw new InvalidPaymentException("Cancelled orders cannot have positive amount");
+        }
+        return this;
+    }
+    
+    public PaymentOrder markAsProcessed() {
+        if (status != PaymentStatus.INITIATED) {
+            throw new InvalidPaymentException("Only initiated orders can be processed");
+        }
+        return this.toBuilder().status(PaymentStatus.PROCESSED).build();
+    }
+}
+```
+
+#### Domain Events (if needed)
+```java
+@Value
+public class PaymentOrderInitiatedEvent {
+    String paymentOrderReference;
+    PaymentAmount amount;
+    LocalDateTime occurredOn;
+}
+```
+
+### 9. Error Handling (RFC 7807)
+
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    
+    @ExceptionHandler(PaymentOrderNotFoundException.class)
+    public ResponseEntity<ProblemDetail> handleNotFound(PaymentOrderNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.NOT_FOUND, 
+            ex.getMessage()
+        );
+        problem.setTitle("Payment Order Not Found");
+        problem.setProperty("paymentOrderReference", ex.getPaymentOrderReference());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem);
+    }
+    
+    @ExceptionHandler(InvalidPaymentException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidPayment(InvalidPaymentException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            ex.getMessage()
+        );
+        problem.setTitle("Invalid Payment Order");
+        problem.setProperty("validationErrors", ex.getErrors());
+        return ResponseEntity.badRequest().body(problem);
+    }
+}
+```
+
+### 10. Docker Configuration with H2
+
+#### Multi-stage Dockerfile (Gradle)
+```dockerfile
+# Build stage
+FROM eclipse-temurin:17-jdk-alpine AS builder
+WORKDIR /app
+
+# Copy Gradle files
+COPY gradle gradle
+COPY gradlew .
+COPY build.gradle .
+COPY settings.gradle .
+
+# Copy source code
+COPY src src
+COPY config config
+
+# Build application (skip tests for faster builds, tests run in CI/CD)
+RUN ./gradlew clean build -x test --no-daemon
+
+# Runtime stage
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+
+# Create non-root user for security
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
+
+# Copy JAR from builder
+COPY --from=builder /app/build/libs/*.jar app.jar
+
+# Expose port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
+
+# JVM options
+ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:+UseContainerSupport"
+
+# Run application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+```
+
+#### docker-compose.yml (H2 in-memory)
+```yaml
+version: '3.8'
+
+services:
+  payment-initiation-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payment-initiation-service
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - JAVA_OPTS=-Xms256m -Xmx512m
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - payment-network
+    restart: unless-stopped
+
+networks:
+  payment-network:
+    driver: bridge
+
+# Optional: Add volumes for H2 file-based persistence
+# volumes:
+#   h2-data:
+#     driver: local
+```
+
+#### application-docker.yml (For containerized H2)
+```yaml
+spring:
+  application:
+    name: payment-initiation-service
+  
+  # H2 with file persistence in Docker (optional)
+  datasource:
+    url: jdbc:h2:file:/app/data/paymentdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+      settings:
+        web-allow-others: true  # Allow access from outside container
+  
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.hiberus.banking: INFO
+    org.springframework.web: WARN
+```
+
+#### Docker Commands
+```bash
+# Build image
+docker build -t payment-initiation-service:latest .
+
+# Run with docker-compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f payment-initiation-service
+
+# Stop services
+docker-compose down
+
+# Rebuild and restart
+docker-compose up -d --build
+
+# Access H2 Console (if enabled)
+# URL: http://localhost:8080/h2-console
+# JDBC URL: jdbc:h2:mem:paymentdb
+# Username: sa
+# Password: (empty)
+
+# Health check
+curl http://localhost:8080/actuator/health
+
+# Test API
+curl -X POST http://localhost:8080/payment-initiation/payment-orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "payerReference": "CUST-123",
+    "payeeReference": "CUST-456",
+    "amount": {
+      "value": 1500.50,
+      "currency": "USD"
+    },
+    "paymentPurpose": "Invoice payment"
+  }'
+```
+
+#### .dockerignore
+```
+.git
+.gitignore
+.gradle
+build/
+!build/libs/*.jar
+*.md
+.idea
+*.iml
+.vscode
+target/
+*.log
+```
+
+#### Alternative: Dockerfile with tests included
+```dockerfile
+# Build and test stage
+FROM eclipse-temurin:17-jdk-alpine AS builder
+WORKDIR /app
+
+COPY gradle gradle
+COPY gradlew .
+COPY build.gradle .
+COPY settings.gradle .
+COPY config config
+COPY src src
+
+# Run tests and build
+RUN ./gradlew clean build --no-daemon
+
+# Runtime stage (same as before)
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
+
+COPY --from=builder /app/build/libs/*.jar app.jar
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
+
+ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC"
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+```
+
+### 11. AI-Assisted Development Documentation
+
+#### Structure for ai/ folder
+```
+ai/
+├── prompts.md                 # All prompts used
+├── decisions.md              # Architectural decisions and rationale
+└── generations/              # Generated code samples
+    ├── openapi-draft.yaml
+    ├── domain-skeleton.java
+    └── test-generation.java
+```
+
+#### Example prompts.md format
+```markdown
+## Prompt 1: WSDL Analysis
+**Prompt**: "Analyze this WSDL for PaymentOrderService and map to BIAN Payment Initiation Service Domain. Identify: operations, data structures, business rules, and status flows."
+
+**Response Summary**: 
+- SOAP operations: createPaymentOrder, getPaymentOrder, updateOrderStatus
+- Mapped to BIAN: Initiate, Retrieve, Execute
+- Key fields: orderId → paymentOrderReference, amount, payer/payee, status
+
+**Manual Corrections**:
+- Changed generic "orderId" to BIAN-compliant "paymentOrderReference"
+- Added currency field (was missing in WSDL)
+- Refined status enum to align with BIAN lifecycle
+
+## Prompt 2: OpenAPI Generation
+[...]
+```
+
+### 12. Code Style & Conventions
+
+#### Naming Conventions
+- **Classes**: PascalCase (e.g., `PaymentOrder`, `InitiatePaymentOrderService`)
+- **Methods**: camelCase, verb-based (e.g., `initiatePayment`, `retrieveOrderStatus`)
+- **Constants**: UPPER_SNAKE_CASE (e.g., `MAX_PAYMENT_AMOUNT`)
+- **Packages**: lowercase, domain-driven (e.g., `domain.model`, `adapter.in.rest`)
+
+#### BIAN-Specific Conventions
+- Prefix interfaces with use case: `InitiatePaymentOrderUseCase`
+- Use "Reference" suffix for IDs: `paymentOrderReference`, `payerReference`
+- Status naming: Use BIAN lifecycle terms (INITIATED, PENDING, PROCESSED, COMPLETED, FAILED, CANCELLED)
+
+#### Lombok Usage
+```java
+@Value                    // For immutable value objects
+@Builder(toBuilder=true) // For entities with many fields
+@RequiredArgsConstructor // For dependency injection
+@Slf4j                   // For logging
+```
+
+### 13. Observability & Production Readiness
+
+#### Actuator Configuration
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  metrics:
+    tags:
+      application: payment-initiation-service
+      service-domain: payment-initiation
+```
+
+#### Custom Metrics
+```java
+@Component
+@RequiredArgsConstructor
+public class PaymentMetrics {
+    
+    private final MeterRegistry registry;
+    
+    public void recordPaymentInitiated(PaymentAmount amount) {
+        registry.counter("payment.initiated", 
+            "currency", amount.getCurrency().toString())
+            .increment();
+        
+        registry.summary("payment.amount")
+            .record(amount.getValue().doubleValue());
+    }
+}
+```
+
+#### Logging Best Practices
+```java
+// Structured logging
+log.info("Payment order initiated", 
+    kv("paymentOrderReference", order.getId()),
+    kv("amount", order.getAmount().getValue()),
+    kv("status", order.getStatus()));
+
+// Never log sensitive data (PII)
+// Use correlation IDs for tracing
+```
+
+### 14. Security Considerations
+
+- Validate all inputs at adapter layer
+- Use Bean Validation annotations in DTOs
+- Implement idempotency using `Idempotency-Key` header
+- Add rate limiting for endpoints
+- Sanitize error messages (don't expose internal details)
+
+### 15. Documentation Requirements
+
+#### README.md Must Include
+1. **Project Overview**: BIAN SD, migration context
+2. **Architecture Decision Records (ADRs)**: Why hexagonal, why reactive
+3. **Setup Instructions**: Prerequisites, local run, Docker
+4. **API Documentation**: Link to Swagger UI, example requests
+5. **Testing**: How to run tests, coverage reports
+6. **AI Usage**: Summary of prompts and generated code
+7. **Quality Gates**: Checkstyle, SpotBugs, JaCoCo results
+
+## Validation Checklist
+
+Before committing code, ensure:
+- [ ] Follows hexagonal architecture (no Spring in domain)
+- [ ] OpenAPI contract-first approach used (interfaces generated)
+- [ ] All BIAN naming conventions followed (payment-initiation, PaymentOrder BQ)
+- [ ] MapStruct mappers configured correctly (3 layers: REST, Persistence, Application)
+- [ ] Unit tests written for domain and application layers (80%+ coverage)
+- [ ] Integration tests with WebTestClient for all endpoints
+- [ ] Repository tests for JPA layer
+- [ ] `./gradlew check` passes (Checkstyle, SpotBugs, JaCoCo)
+- [ ] H2 database configured correctly (in-memory or file-based)
+- [ ] Dockerfile builds successfully (`docker build -t payment-service .`)
+- [ ] docker-compose up works (`docker-compose up -d`)
+- [ ] All endpoints return correct HTTP status codes (201, 200, 404, 400, 500)
+- [ ] RFC 7807 error handling implemented (application/problem+json)
+- [ ] AI usage documented in ai/ folder (prompts.md, decisions.md, generations/)
+- [ ] README updated with setup instructions and API documentation
+- [ ] Actuator endpoints exposed for health checks
+- [ ] Logging configured appropriately (no sensitive data)
+- [ ] Value objects are immutable (Lombok @Value)
+- [ ] No framework dependencies in domain layer
+- [ ] All exceptions properly handled in GlobalExceptionHandler
+
+## Additional Gradle Commands
+
+```bash
+# Clean build
+./gradlew clean build
+
+# Run with quality checks
+./gradlew clean build check
+
+# Run only tests
+./gradlew test
+
+# Generate coverage report
+./gradlew test jacocoTestReport
+# Open: build/reports/jacoco/test/html/index.html
+
+# Run checkstyle only
+./gradlew checkstyleMain checkstyleTest
+
+# Run spotbugs only
+./gradlew spotbugsMain spotbugsTest
+
+# Build without tests (faster for development)
+./gradlew clean build -x test
+
+# Run application locally
+./gradlew bootRun
+
+# Generate OpenAPI code
+./gradlew openApiGenerate
+
+# View project dependencies
+./gradlew dependencies
+
+# View available tasks
+./gradlew tasks
+```
+
+## Remember
+- **BIAN alignment is non-negotiable**: Always validate against BIAN standards
+- **Domain purity**: Keep domain layer framework-agnostic
+- **Test-first mindset**: Write tests before implementation
+- **Document AI usage**: Every AI-generated code must be reviewed and documented
+- **Quality over speed**: Meet all quality gates before considering "done"
+
+---
+
+When in doubt, ask yourself: "Does this align with BIAN Payment Initiation Service Domain standards?" and "Is this following hexagonal architecture principles?"

@@ -1,0 +1,170 @@
+## Plan de Implementación: Microservicio Payment Initiation (BIAN Hexagonal)
+
+Este plan detalla los pasos exactos para la creación del microservicio, cumpliendo con todos los requisitos del documento técnico (Java 17+, Spring Boot 3+, Contract-First, Arquitectura Hexagonal, BIAN, Calidad, Docker).
+
+---
+
+### FASE 1: Análisis y Definición del Contrato (Contract-First / BIAN)
+
+#### 1.1. Análisis del WSDL y Mapping BIAN (IA Prompt)
+
+// PROMPT PARA IA (Paso 1.1)
+
+Actúa como un arquitecto de software experto en BIAN. Analiza el siguiente WSDL y los ejemplos de mensajes SOAP.
+1. Resume las dos operaciones SOAP principales: `SubmitPaymentOrder` y `GetPaymentOrderStatus`.
+2. Para cada una, identifica los campos clave de entrada y salida (`externalId`, `debtorIban`, `amount`, `status`, `lastUpdate`, etc.).
+3. Propón un mapeo directo de estos campos al Service Domain BIAN 'Payment Initiation' (BQ: PaymentOrder). Indica qué campos SOAP se agruparían en objetos BIAN (como `instructedAmount` o `debtorAccount`).
+
+---
+
+#### 1.2. Generación del Borrador `openapi.yaml` (IA Prompt)
+
+// PROMPT PARA IA (Paso 1.2)
+
+Usando el mapeo BIAN que acabas de definir (PaymentOrder BQ), genera el borrador completo de un archivo `openapi.yaml` (OpenAPI 3.0) que defina los tres endpoints REST requeridos:
+1. `POST /payment-initiation/payment-orders` (Mapea a SubmitPaymentOrderRequest).
+2. `GET /payment-initiation/payment-orders/{id}` (Consulta completa de la orden).
+3. `GET /payment-initiation/payment-orders/{id}/status` (Consulta de estado, mapea a GetPaymentOrderStatusResponse).
+Asegúrate de definir todos los schemas necesarios (`PaymentOrderInitiationRequest`, `Account`, `Amount`, `PaymentOrderStatus`, etc.) con sus propiedades y tipos de datos (string, number, date/date-time).
+
+---
+
+#### 1.3. y 1.4. Revisión Manual y Configuración Maven
+
+// TAREA MANUAL (Paso 1.3): Revisar y refinar el `openapi.yaml` generado por la IA.
+// Asegúrate de que los tipos (`date`, `float`) y la estructura BIAN (`debtorAccount`, `instructedAmount`) sean correctos.
+
+// TAREA: Configurar el pom.xml (Paso 1.4)
+// 1. Agregar dependencias: spring-boot-starter-web (o webflux), lombok, y springdoc-openapi-starter-webmvc-ui (para Swagger).
+// 2. Configurar el plugin 'openapi-generator-maven-plugin':
+//    - Generador: 'spring' (o 'spring-boot').
+//    - 'interfaceOnly=true'.
+//    - Paquete de interfaces: com.hiberus.payment.initiation.api
+//    - Paquete de modelos/DTOs: com.hiberus.payment.initiation.model
+// 3. Agregar los plugins de calidad: 'jacoco-maven-plugin' (cobertura >= 80%), 'maven-checkstyle-plugin', 'spotbugs-maven-plugin'.
+
+---
+
+### FASE 2: Configuración de Proyecto y Estructura Hexagonal
+
+#### 2.1. Estructura de Paquetes
+
+// TAREA: Crear la estructura de paquetes central del proyecto (com.hiberus.payment.initiation)
+// Esto define la Arquitectura Hexagonal.
+
+com.hiberus.payment.initiation
+├── domain               // Lógica de Negocio Pura (Entidades, Reglas, Invariantes)
+│   ├── model            // PaymentOrder, Account, Amount, PaymentOrderCommand, PaymentOrderStatus
+│   └── service          // PaymentOrderDomainService
+├── application          // Casos de Uso (Orquestación)
+│   └── service          // PaymentOrderApplicationService (Implementa el Driving Port)
+├── port                 // Contratos (Interfaces)
+│   ├── driving          // PaymentOrderServicePort (Llamado por el Controller)
+│   └── driven           // PaymentOrderPersistencePort, LegacySystemPort (Llamado por la Aplicación)
+└── adapter              // Implementaciones Técnicas
+    ├── in               // PaymentOrderControllerAdapter (Implementa la interfaz generada)
+    └── out              // PaymentOrderPersistenceAdapter (Ej. R2DBC/JPA Repo), LegacySystemAdapter (Mock/SOAP Client)
+
+---
+
+### FASE 3: Implementación del Dominio y Puertos
+
+#### 3.1. Dominio (Modelo de Negocio BIAN)
+
+// TAREA: Implementar las clases de Dominio (Paso 3.1)
+
+// domain/model/PaymentOrder.java (Entidad principal)
+// Incluir PaymentOrderId, externalReference, debtorAccount, creditorAccount, instructedAmount, remittanceInformation, requestedExecutionDate, status, lastUpdate. Usar Value Objects (Account, Amount).
+
+// domain/model/Account.java (Value Object BIAN)
+// Propiedad: String iban.
+
+// domain/model/Amount.java (Value Object BIAN)
+// Propiedades: BigDecimal amount, String currency.
+
+// domain/service/PaymentOrderDomainService.java
+// Contiene la lógica para validar el estado o reglas de negocio (ej. 'validateCreation(PaymentOrder order)').
+
+#### 3.2. Puertos
+
+// TAREA: Implementar las interfaces de Puerto (Paso 3.2)
+
+// port/driving/PaymentOrderServicePort.java (Interfaz de la Capa de Aplicación)
+public interface PaymentOrderServicePort {
+    PaymentOrder submitOrder(PaymentOrderCommand command);
+    PaymentOrder retrieveOrder(String id);
+    PaymentOrderStatus retrieveOrderStatus(String id);
+}
+
+// port/driven/PaymentOrderPersistencePort.java (Interfaz de Persistencia)
+public interface PaymentOrderPersistencePort {
+    PaymentOrder save(PaymentOrder order);
+    Optional<PaymentOrder> findById(String id);
+}
+
+---
+
+### FASE 4: Lógica de Aplicación y Adaptadores
+
+#### 4.1. Capa de Aplicación
+
+// TAREA: Implementar el Service de Aplicación (Paso 4.1)
+// application/service/PaymentOrderApplicationService.java
+// Implementa PaymentOrderServicePort. Usa @Transactional y orquesta:
+// 1. Llama a DomainService para validación.
+// 2. Persiste la nueva orden usando PaymentOrderPersistencePort.
+// 3. Llama a LegacySystemPort si es necesario para sincronización.
+
+#### 4.2. Adaptador de Entrada (Controller)
+
+// TAREA: Implementar el Driving Adapter (Paso 4.2)
+// adapter/in/PaymentOrderControllerAdapter.java
+// 1. Implementa la interfaz generada: `PaymentOrderApi`.
+// 2. Usa un Mapper (manual o MapStruct) para convertir Request DTO (del modelo generado) a PaymentOrderCommand (del modelo de Dominio).
+// 3. Llama a `paymentOrderServicePort`.
+// 4. Mapea el resultado (PaymentOrder de Dominio) a Response DTO y retorna `ResponseEntity`.
+
+#### 4.3. Adaptador de Salida (Mock/Persistencia)
+
+// TAREA: Implementar un Mock de Persistencia (Paso 4.3)
+// adapter/out/PaymentOrderPersistenceAdapter.java
+// Implementa PaymentOrderPersistencePort.
+// *Para la prueba inicial, usar un Map/ConcurrentHashMap como mock de base de datos.*
+
+---
+
+### FASE 5: Pruebas y Operacionalización (DevOps)
+
+#### 5.1. Generación de Tests (IA Prompt)
+
+// PROMPT PARA IA (Paso 5.1)
+
+Genera el código completo de las siguientes clases de prueba, usando JUnit 5, Mockito y AssertJ:
+1. Una prueba unitaria (`PaymentOrderDomainServiceTest`) que cubra la regla de negocio: si el monto instruido es negativo, debe lanzar una excepción.
+2. Una prueba de integración E2E (`PaymentOrderE2ETest`) usando `WebTestClient` (o `RestAssured`). Esta prueba debe hacer un `POST` exitoso a `/payment-initiation/payment-orders` (verificando status 201) y luego un `GET` a `/payment-initiation/payment-orders/{id}` usando el ID retornado (verificando status 200).
+Asegúrate de incluir las anotaciones y la configuración necesarias de Spring Boot Test.
+
+---
+
+#### 5.2. Calidad y Docker
+
+// TAREA: Ejecutar Pruebas y Generar Reporte de Cobertura (Paso 5.2)
+// Comando para verificar cobertura y calidad: `mvn clean verify`
+// *El desarrollo debe iterar hasta obtener JaCoCo >= 80% y no tener fallos de Checkstyle/SpotBugs.*
+
+// TAREA: Crear Dockerfile (Paso 5.3)
+// Crear un Dockerfile multi-stage (builder stage con JDK 17, runtime stage con JRE 17).
+
+// TAREA: Crear docker-compose.yml (Paso 5.4)
+// Definir un servicio simple para el microservicio Payment Initiation.
+
+---
+
+### FASE 6: Documentación y Entrega
+
+// TAREA: Crear el README.md (Paso 6.1)
+// Incluir: Contexto de migración a BIAN/REST, Pasos de ejecución local y con Docker.
+
+// TAREA: Carpeta 'ai' con Prompts y Decisiones (Paso 6.2 y 6.3)
+// ai/prompts.md: Copiar los prompts usados en las Fases 1 y 5.
+// ai/generations/decisions.md: Documentar las correcciones manuales hechas al `openapi.yaml` generado por la IA y la justificación BIAN/funcional.

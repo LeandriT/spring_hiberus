@@ -1,0 +1,413 @@
+# OpenAPI 3.0 Contract - Payment Initiation Service
+# 
+# Fecha de generación: 2025-01-27
+# Prompt usado: Ver ../prompts.md - Prompt 3
+# Herramienta: Cursor
+# 
+# Estado: original (generado por IA, sin modificaciones significativas)
+# 
+# NOTAS SOBRE EL CONTRATO GENERADO:
+# 
+# ✅ MANTENIDO SIN CAMBIOS:
+# - Estructura completa del contrato OpenAPI 3.0.3
+# - Los 3 endpoints principales (POST, GET /{id}, GET /{id}/status)
+# - Todos los schemas definidos (InitiatePaymentOrderRequest, Responses, Account, PaymentAmount, etc.)
+# - Validaciones y restricciones (patrones regex, longitudes, enums)
+# - Manejo de errores RFC 7807 (ProblemDetail)
+# - Ejemplos en requestBody y schemas
+# - Descripciones y documentación
+# 
+# ✏️ MODIFICACIONES APLICADAS:
+# - Se agregó extensión x-mapping en PaymentOrderStatus para documentar mapeo legacy → BIAN
+# - Se refinaron algunas descripciones para incluir referencias al mapeo SOAP → BIAN
+# - Se agregaron más ejemplos en los schemas para facilitar testing
+# 
+# 📋 ESTRUCTURA DEL CONTRATO:
+# - Servers: http://localhost:8080
+# - Paths: 3 endpoints REST
+# - Components: 8 schemas principales
+# - Validaciones: Patrones, longitudes, enums, mínimos
+# - Errores: RFC 7807 ProblemDetail para 400, 404, 500
+# 
+# 🔄 PRÓXIMOS PASOS:
+# - Configurar OpenAPI Generator en build.gradle
+# - Generar interfaces y DTOs desde este contrato
+# - Implementar controladores que implementen las interfaces generadas
+
+openapi: 3.0.3
+info:
+  title: Payment Initiation API
+  description: |
+    REST API para la gestión de órdenes de pago, alineada con el estándar BIAN 
+    (Banking Industry Architecture Network) Service Domain "Payment Initiation" 
+    con Behavior Qualifier "PaymentOrder".
+    
+    Este servicio migra funcionalidad del servicio SOAP legacy PaymentOrderService
+    a una arquitectura REST moderna.
+  version: 1.0.0
+  contact:
+    name: Payment Initiation Service Team
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8080
+    description: Servidor de desarrollo local
+
+paths:
+  /payment-initiation/payment-orders:
+    post:
+      operationId: initiatePaymentOrder
+      summary: Initiate a new payment order
+      description: |
+        Crea una nueva orden de pago. Esta operación mapea a la operación SOAP 
+        legacy `SubmitPaymentOrder`.
+      tags:
+        - Payment Orders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiatePaymentOrderRequest'
+            example:
+              externalReference: "EXT-1"
+              debtorAccount:
+                iban: "EC12DEBTOR"
+              creditorAccount:
+                iban: "EC98CREDITOR"
+              instructedAmount:
+                amount: 150.75
+                currency: "USD"
+              remittanceInformation: "Factura 001-123"
+              requestedExecutionDate: "2025-10-31"
+      responses:
+        '201':
+          description: Payment order successfully initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiatePaymentOrderResponse'
+        '400':
+          description: Bad request - validation errors
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /payment-initiation/payment-orders/{id}:
+    get:
+      operationId: retrievePaymentOrder
+      summary: Retrieve payment order details
+      description: |
+        Obtiene el detalle completo de una orden de pago por su identificador.
+        Esta operación no tiene equivalente directo en el SOAP legacy, pero es
+        recomendada por BIAN para obtener información completa del recurso.
+      tags:
+        - Payment Orders
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Payment order reference identifier (e.g., PO-0001)
+          schema:
+            type: string
+            pattern: '^PO-[A-Z0-9-]+$'
+            example: "PO-0001"
+      responses:
+        '200':
+          description: Payment order retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievePaymentOrderResponse'
+        '404':
+          description: Payment order not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /payment-initiation/payment-orders/{id}/status:
+    get:
+      operationId: retrievePaymentOrderStatus
+      summary: Retrieve payment order status
+      description: |
+        Obtiene únicamente el estado actual de una orden de pago. Esta operación
+        mapea a la operación SOAP legacy `GetPaymentOrderStatus`.
+      tags:
+        - Payment Orders
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Payment order reference identifier (e.g., PO-0001)
+          schema:
+            type: string
+            pattern: '^PO-[A-Z0-9-]+$'
+            example: "PO-0001"
+      responses:
+        '200':
+          description: Payment order status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentOrderStatusResponse'
+        '404':
+          description: Payment order not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+components:
+  schemas:
+    InitiatePaymentOrderRequest:
+      type: object
+      required:
+        - externalReference
+        - debtorAccount
+        - creditorAccount
+        - instructedAmount
+        - requestedExecutionDate
+      properties:
+        externalReference:
+          type: string
+          description: External reference provided by the client for traceability
+          example: "EXT-1"
+          minLength: 1
+          maxLength: 50
+        debtorAccount:
+          $ref: '#/components/schemas/Account'
+        creditorAccount:
+          $ref: '#/components/schemas/Account'
+        instructedAmount:
+          $ref: '#/components/schemas/PaymentAmount'
+        remittanceInformation:
+          type: string
+          description: Remittance information (payment purpose/description)
+          example: "Factura 001-123"
+          maxLength: 500
+        requestedExecutionDate:
+          type: string
+          format: date
+          description: Requested execution date for the payment order (ISO 8601 date format)
+          example: "2025-10-31"
+
+    InitiatePaymentOrderResponse:
+      type: object
+      required:
+        - paymentOrderReference
+        - paymentOrderStatus
+        - debtorAccount
+        - creditorAccount
+        - instructedAmount
+        - createdAt
+      properties:
+        paymentOrderReference:
+          type: string
+          description: BIAN-compliant payment order reference identifier
+          example: "PO-0001"
+          pattern: '^PO-[A-Z0-9-]+$'
+        paymentOrderStatus:
+          $ref: '#/components/schemas/PaymentOrderStatus'
+        debtorAccount:
+          $ref: '#/components/schemas/Account'
+        creditorAccount:
+          $ref: '#/components/schemas/Account'
+        instructedAmount:
+          $ref: '#/components/schemas/PaymentAmount'
+        remittanceInformation:
+          type: string
+          description: Remittance information
+          example: "Factura 001-123"
+        requestedExecutionDate:
+          type: string
+          format: date
+          description: Requested execution date
+          example: "2025-10-31"
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the payment order was created (ISO 8601)
+          example: "2025-10-30T10:15:30Z"
+
+    RetrievePaymentOrderResponse:
+      type: object
+      required:
+        - paymentOrderReference
+        - paymentOrderStatus
+        - debtorAccount
+        - creditorAccount
+        - instructedAmount
+        - createdAt
+      properties:
+        paymentOrderReference:
+          type: string
+          description: Payment order reference identifier
+          example: "PO-0001"
+          pattern: '^PO-[A-Z0-9-]+$'
+        paymentOrderStatus:
+          $ref: '#/components/schemas/PaymentOrderStatus'
+        externalReference:
+          type: string
+          description: External reference provided by the client
+          example: "EXT-1"
+        debtorAccount:
+          $ref: '#/components/schemas/Account'
+        creditorAccount:
+          $ref: '#/components/schemas/Account'
+        instructedAmount:
+          $ref: '#/components/schemas/PaymentAmount'
+        remittanceInformation:
+          type: string
+          description: Remittance information
+          example: "Factura 001-123"
+        requestedExecutionDate:
+          type: string
+          format: date
+          description: Requested execution date
+          example: "2025-10-31"
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the payment order was created
+          example: "2025-10-30T10:15:30Z"
+        lastUpdated:
+          type: string
+          format: date-time
+          description: Timestamp of the last update
+          example: "2025-10-30T16:25:30Z"
+
+    PaymentOrderStatusResponse:
+      type: object
+      required:
+        - paymentOrderReference
+        - paymentOrderStatus
+        - lastUpdated
+      properties:
+        paymentOrderReference:
+          type: string
+          description: Payment order reference identifier
+          example: "PO-0001"
+          pattern: '^PO-[A-Z0-9-]+$'
+        paymentOrderStatus:
+          $ref: '#/components/schemas/PaymentOrderStatus'
+        lastUpdated:
+          type: string
+          format: date-time
+          description: Timestamp of the last status update (ISO 8601)
+          example: "2025-10-30T16:25:30Z"
+
+    Account:
+      type: object
+      required:
+        - iban
+      properties:
+        iban:
+          type: string
+          description: International Bank Account Number (IBAN)
+          example: "EC12DEBTOR"
+          minLength: 15
+          maxLength: 34
+          pattern: '^[A-Z]{2}[0-9]{2}[A-Z0-9]+$'
+
+    PaymentAmount:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: number
+          format: double
+          description: Payment amount
+          example: 150.75
+          minimum: 0.01
+          exclusiveMinimum: false
+        currency:
+          type: string
+          description: Currency code (ISO 4217)
+          example: "USD"
+          pattern: '^[A-Z]{3}$'
+          enum:
+            - USD
+            - EUR
+            - GBP
+            - JPY
+            - CAD
+            - AUD
+            - CHF
+            - CNY
+
+    PaymentOrderStatus:
+      type: string
+      description: Payment order status following BIAN lifecycle
+      enum:
+        - INITIATED
+        - PENDING
+        - PROCESSED
+        - COMPLETED
+        - FAILED
+        - CANCELLED
+      example: "INITIATED"
+      x-mapping:
+        legacy:
+          ACCEPTED: INITIATED
+          PENDING: PENDING
+          PROCESSING: PROCESSED
+          SETTLED: COMPLETED
+          REJECTED: FAILED
+          CANCELLED: CANCELLED
+
+    ProblemDetail:
+      type: object
+      description: |
+        RFC 7807 Problem Details for HTTP APIs. Used for error responses.
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: A URI reference that identifies the problem type
+          example: "https://api.bank.com/problems/invalid-request"
+        title:
+          type: string
+          description: A short, human-readable summary of the problem type
+          example: "Invalid Payment Order"
+        status:
+          type: integer
+          format: int32
+          description: The HTTP status code
+          example: 400
+        detail:
+          type: string
+          description: A human-readable explanation specific to this occurrence of the problem
+          example: "The requested execution date cannot be in the past"
+        instance:
+          type: string
+          format: uri
+          description: A URI reference that identifies the specific occurrence of the problem
+          example: "/payment-initiation/payment-orders"
+

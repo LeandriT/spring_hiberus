@@ -1,0 +1,214 @@
+1. Contexto del proyecto
+	•	Un banco está migrando servicios SOAP legados a microservicios REST alineados con el estándar BIAN.
+	•	Para la prueba se toma el servicio SOAP de órdenes de pago (PaymentOrder) como punto de partida.  ￼
+	•	El WSDL y los XML de ejemplo sirven solo para análisis, no para exponer SOAP nuevamente.  ￼
+
+Objetivo: diseñar e implementar un microservicio REST (contract-first, hexagonal) para el Service Domain “Payment Initiation” – BQ PaymentOrder, que reemplace funcionalmente al servicio SOAP legado.
+
+⸻
+
+2. Funcionalidades REST obligatorias
+
+Según el enunciado y el Postman:
+	1.	POST /payment-initiation/payment-orders
+	•	Acción: Initiate PaymentOrder.
+	•	Cuerpo de ejemplo (Postman):
+		
+		
+		{
+  "externalReference": "EXT-1",
+  "debtorAccount": { "iban": "EC12DEBTOR" },
+  "creditorAccount": { "iban": "EC98CREDITOR" },
+  "instructedAmount": { "amount": 150.75, "currency": "USD" },
+  "remittanceInformation": "Factura 001-123",
+  "requestedExecutionDate": "2025-10-31"
+}
+•	Conceptualmente debe:
+	•	Validar el request (IBAN, amount > 0, moneda, fecha, etc.).
+	•	Crear una PaymentOrder en el dominio con un paymentOrderId interno.
+	•	Asignar un estado inicial (por ej. INITIATED o PENDING).
+	•	Devolver datos de la orden (id, estado, etc.).
+
+	2.	GET /payment-initiation/payment-orders/{id}
+	•	Acción: Retrieve PaymentOrder.
+	•	Devuelve el detalle completo de la orden de pago (similar a lo enviado en el POST + estado, timestamps, etc.).
+	3.	GET /payment-initiation/payment-orders/{id}/status
+	•	Acción: Retrieve PaymentOrder Status.
+	•	Devuelve una vista reducida: paymentOrderId, status, lastUpdate (alineado con el WSDL legado).
+
+⸻
+
+3. Análisis del legado SOAP (WSDL → BIAN)
+
+Del WSDL de PaymentOrderService vemos dos operaciones principales:
+	•	SubmitPaymentOrder
+	•	Request:
+	•	externalId : string
+	•	debtorIban : string
+	•	creditorIban : string
+	•	amount : decimal
+	•	currency : string
+	•	remittanceInfo : string (opcional)
+	•	requestedExecutionDate : date
+	•	Response:
+	•	paymentOrderId : string
+	•	status : string
+	•	GetPaymentOrderStatus
+	•	Request:
+	•	paymentOrderId : string
+	•	Response:
+	•	paymentOrderId : string
+	•	status : string
+	•	lastUpdate : dateTime
+
+Mapeo conceptual SOAP → BIAN REST
+
+Al alinear con BIAN Payment Initiation / PaymentOrder, el mapeo típico sería:
+	•	externalId → externalReference
+	•	debtorIban → debtorAccount.iban
+	•	creditorIban → creditorAccount.iban
+	•	amount + currency → instructedAmount.amount, instructedAmount.currency
+	•	remittanceInfo → remittanceInformation
+	•	requestedExecutionDate → requestedExecutionDate
+	•	paymentOrderId → paymentOrderId (id interno BQ PaymentOrder)
+	•	status → status (dominio PaymentOrder: INITIATED, ACCEPTED, REJECTED, EXECUTED, FAILED, etc.)
+	•	lastUpdate → lastStatusUpdate o similar
+
+La responsabilidad clave es que el nuevo contrato REST refleje el lenguaje BIAN (Payment Initiation / PaymentOrder) pero mantenga la información funcional que el SOAP ya exponía.
+
+⸻
+
+4. Modelo de dominio (visión de arquitecto)
+
+Propuesta de entidad de dominio PaymentOrder:
+	•	paymentOrderId (identificador interno, p.ej. PO-0001)
+	•	externalReference
+	•	debtorAccount (value object con iban)
+	•	creditorAccount (value object con iban)
+	•	instructedAmount (value object con amount, currency)
+	•	remittanceInformation
+	•	requestedExecutionDate
+	•	status (enum controlado)
+	•	creationDate
+	•	lastUpdate
+
+Opcionalmente:
+	•	Invariantes de dominio:
+	•	amount > 0
+	•	currency permitida (p.ej. USD)
+	•	requestedExecutionDate ≥ hoy (según reglas de negocio)
+	•	Reglas BIAN:
+	•	Estados válidos y transiciones permitidas (por ejemplo, no pasar de REJECTED a EXECUTED).
+
+⸻
+
+5. Arquitectura esperada: Hexagonal + Contract-first
+
+El enunciado pide explícitamente:
+	•	Java 17+
+	•	Spring Boot 3+
+	•	Contract-first con OpenAPI 3.0 (usar openapi-generator)
+	•	Arquitectura hexagonal (dominio, aplicación, puertos, adaptadores, config)
+
+Capas propuestas
+	1.	Dominio
+	•	Entidad PaymentOrder, value objects (Account, Money, etc.).
+	•	Enum PaymentOrderStatus.
+	•	Servicios de dominio (si hay reglas complejas).
+	2.	Aplicación (casos de uso)
+	•	Casos de uso:
+	•	InitiatePaymentOrderUseCase
+	•	RetrievePaymentOrderUseCase
+	•	RetrievePaymentOrderStatusUseCase
+	•	Puertos (interfaces) hacia fuera:
+	•	PaymentOrderRepository (persistencia)
+	•	(Opcional) CoreBankingClient si se quiere simular u orquestar con otros sistemas.
+	3.	Adaptadores / Infraestructura
+	•	REST Controller: implementa las interfaces generadas por OpenAPI (payment-orders API).
+	•	Mapper entre DTOs (OpenAPI) ↔ modelos de dominio.
+	•	Persistencia:
+	•	Puede ser en memoria para la prueba, o JPA/R2DBC si se quiere ir más lejos.
+	•	Configuración (Spring config, bean definitions).
+
+La idea de contract-first es:
+	1.	Diseñar openapi.yaml alineado a BIAN (paths, schemas, responses).
+	2.	Usar openapi-generator para generar:
+	•	Interfaces de controller (por ej. PaymentOrdersApi).
+	•	Modelos DTO.
+	3.	Implementar las interfaces generadas en la capa de adaptadores, delegando en los casos de uso.
+
+⸻
+
+6. Requisitos técnicos y de calidad
+
+Del documento:
+
+Mandatorios
+	•	Java 17+
+	•	Spring Boot 3+
+	•	OpenAPI 3.0 + openapi-generator (contract-first)
+	•	Arquitectura hexagonal
+	•	Pruebas
+	•	Unitarias: JUnit 5, AssertJ, Mockito.
+	•	Integración: WebTestClient o RestAssured.
+	•	Calidad
+	•	JaCoCo con ≥ 80% de cobertura (líneas).
+	•	Checkstyle.
+	•	SpotBugs.
+	•	Docker
+	•	Dockerfile (multi-stage).
+	•	docker-compose mínimo para levantar el servicio.
+	•	Uso asistido de IA
+	•	Evidencias en carpeta ai/:
+	•	prompts.md
+	•	generations/
+	•	decisions.md
+	•	Explicar correcciones manuales hechas sobre lo generado por IA.
+
+Opcionales (Nice to have)
+	•	Spring WebFlux (reactivo) en lugar de MVC.
+	•	Persistencia reactiva con R2DBC + Testcontainers.
+	•	Manejo de errores RFC 7807 (application/problem+json).
+	•	Observabilidad (Micrometer/Actuator).
+	•	Idempotencia.
+	•	Validaciones robustas (Bean Validation, etc.).
+
+⸻
+
+7. Entregables esperados
+
+Según el enunciado:  ￼
+	1.	Repositorio (URL).
+	2.	README con:
+	•	Contexto y decisiones de diseño.
+	•	Pasos para ejecutar local y con Docker.
+	•	Sección de uso de IA: prompts, resúmenes de respuestas, fragmentos generados, correcciones humanas.
+	3.	Archivo OpenAPI (.yml) con el contrato.
+	4.	Pruebas unitarias + E2E, con reporte de cobertura ≥ 80%.
+	5.	Calidad:
+	•	mvn verify sin errores de Checkstyle ni SpotBugs.
+	6.	Docker:
+	•	Dockerfile multi-stage.
+	•	docker-compose.yml.
+	7.	Evidencias de IA:
+	•	Carpeta ai/ con la documentación indicada.
+
+⸻
+
+8. En resumen, ¿qué se tiene que realizar?
+
+Tú, como desarrollador/arquitecto, debes:
+	1.	Analizar el WSDL y los XML para entender:
+	•	Datos de entrada/salida.
+	•	Estados y campos relevantes de la orden de pago.
+	2.	Diseñar un contrato OpenAPI 3.0 alineado con BIAN Payment Initiation / PaymentOrder:
+	•	Paths:
+	•	POST /payment-initiation/payment-orders
+	•	GET /payment-initiation/payment-orders/{id}
+	•	GET /payment-initiation/payment-orders/{id}/status
+	•	Schemas BIAN-friendly.
+	3.	Generar código a partir del OpenAPI (openapi-generator).
+	4.	Implementar el microservicio en Spring Boot 3 (Java 17) con arquitectura hexagonal, respetando el contract-first.
+	5.	Implementar pruebas y calidad (JUnit, WebTestClient/RestAssured, JaCoCo, Checkstyle, SpotBugs) alcanzando los umbrales.
+	6.	Empaquetar en Docker + docker-compose.
+	7.	Documentar el uso de IA en el proceso (prompts, decisiones, correcciones).
