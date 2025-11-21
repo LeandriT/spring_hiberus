@@ -1,0 +1,393 @@
+openapi: 3.0.3
+info:
+  title: Payment Initiation Service API
+  description: |
+    Microservicio de Payment Initiation basado en el estándar BIAN (Banking Industry Architecture Network).
+    Migración de servicio SOAP legacy a REST API.
+    
+    Este servicio permite:
+    - Iniciar órdenes de pago (Initiate Payment Order)
+    - Recuperar órdenes de pago completas (Retrieve Payment Order)
+    - Consultar el estado de órdenes de pago (Retrieve Payment Order Status)
+  version: 1.0.0
+  contact:
+    name: Payment Initiation Team
+    email: payment-initiation@bank.com
+
+servers:
+  - url: http://localhost:8080
+    description: Servidor de desarrollo local
+
+paths:
+  /payment-initiation/payment-orders:
+    post:
+      operationId: initiatePaymentOrder
+      summary: Iniciar una nueva orden de pago
+      description: |
+        Crea una nueva orden de pago según el estándar BIAN Payment Initiation.
+        Mapeo desde operación SOAP legacy: SubmitPaymentOrder
+      tags:
+        - Payment Orders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiatePaymentOrderRequest'
+            example:
+              externalReference: "EXT-123"
+              debtorAccount:
+                iban: "EC123456789012345678"
+              creditorAccount:
+                iban: "EC987654321098765432"
+              instructedAmount:
+                amount: 150.75
+                currency: "USD"
+              remittanceInformation: "Factura 001-123"
+              requestedExecutionDate: "2025-10-31"
+      responses:
+        '201':
+          description: Orden de pago creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiatePaymentOrderResponse'
+              example:
+                paymentOrderId: "PO-0001"
+                status: "ACCEPTED"
+        '400':
+          description: Solicitud inválida (errores de validación)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+              example:
+                type: "about:blank"
+                title: "Bad Request"
+                status: 400
+                detail: "Validation failed for object 'initiatePaymentOrderRequest'"
+                instance: "/payment-initiation/payment-orders"
+        '422':
+          description: Entidad no procesable (errores de negocio)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /payment-initiation/payment-orders/{paymentOrderId}:
+    get:
+      operationId: retrievePaymentOrder
+      summary: Recuperar una orden de pago completa
+      description: |
+        Obtiene la información completa de una orden de pago existente.
+        Esta operación no existe en el servicio SOAP legacy, pero es requerida por el estándar BIAN.
+      tags:
+        - Payment Orders
+      parameters:
+        - name: paymentOrderId
+          in: path
+          required: true
+          description: Identificador único de la orden de pago
+          schema:
+            type: string
+            pattern: '^PO-[0-9]+$'
+            example: "PO-0001"
+      responses:
+        '200':
+          description: Orden de pago recuperada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievePaymentOrderResponse'
+              example:
+                paymentOrderId: "PO-0001"
+                externalReference: "EXT-123"
+                debtorAccount:
+                  iban: "EC123456789012345678"
+                creditorAccount:
+                  iban: "EC987654321098765432"
+                instructedAmount:
+                  amount: 150.75
+                  currency: "USD"
+                remittanceInformation: "Factura 001-123"
+                requestedExecutionDate: "2025-10-31"
+                status: "ACCEPTED"
+                lastUpdate: "2025-10-30T16:25:30Z"
+        '404':
+          description: Orden de pago no encontrada
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+              example:
+                type: "about:blank"
+                title: "Not Found"
+                status: 404
+                detail: "Payment order with id 'PO-0001' not found"
+                instance: "/payment-initiation/payment-orders/PO-0001"
+        '500':
+          description: Error interno del servidor
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /payment-initiation/payment-orders/{paymentOrderId}/status:
+    get:
+      operationId: retrievePaymentOrderStatus
+      summary: Obtener el estado de una orden de pago
+      description: |
+        Consulta únicamente el estado actual de una orden de pago.
+        Mapeo desde operación SOAP legacy: GetPaymentOrderStatus
+      tags:
+        - Payment Orders
+      parameters:
+        - name: paymentOrderId
+          in: path
+          required: true
+          description: Identificador único de la orden de pago
+          schema:
+            type: string
+            pattern: '^PO-[0-9]+$'
+            example: "PO-0001"
+      responses:
+        '200':
+          description: Estado de la orden de pago recuperado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentOrderStatusResponse'
+              example:
+                paymentOrderId: "PO-0001"
+                status: "SETTLED"
+                lastUpdate: "2025-10-30T16:25:30Z"
+        '404':
+          description: Orden de pago no encontrada
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+              example:
+                type: "about:blank"
+                title: "Not Found"
+                status: 404
+                detail: "Payment order with id 'PO-0001' not found"
+                instance: "/payment-initiation/payment-orders/PO-0001/status"
+        '500':
+          description: Error interno del servidor
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+components:
+  schemas:
+    InitiatePaymentOrderRequest:
+      type: object
+      required:
+        - externalReference
+        - debtorAccount
+        - creditorAccount
+        - instructedAmount
+        - requestedExecutionDate
+      properties:
+        externalReference:
+          type: string
+          description: Identificador externo de la orden de pago proporcionado por el cliente
+          minLength: 1
+          maxLength: 100
+          example: "EXT-123"
+        debtorAccount:
+          $ref: '#/components/schemas/PaymentAccount'
+        creditorAccount:
+          $ref: '#/components/schemas/PaymentAccount'
+        instructedAmount:
+          $ref: '#/components/schemas/PaymentAmount'
+        remittanceInformation:
+          type: string
+          description: Información de remesas o referencia del pago
+          maxLength: 500
+          example: "Factura 001-123"
+        requestedExecutionDate:
+          type: string
+          format: date
+          description: Fecha de ejecución solicitada (ISO 8601 date format: YYYY-MM-DD)
+          example: "2025-10-31"
+
+    InitiatePaymentOrderResponse:
+      type: object
+      required:
+        - paymentOrderId
+        - status
+      properties:
+        paymentOrderId:
+          type: string
+          description: Identificador único de la orden de pago generado por el sistema
+          pattern: '^PO-[0-9]+$'
+          example: "PO-0001"
+        status:
+          $ref: '#/components/schemas/PaymentOrderStatus'
+
+    RetrievePaymentOrderResponse:
+      type: object
+      required:
+        - paymentOrderId
+        - externalReference
+        - debtorAccount
+        - creditorAccount
+        - instructedAmount
+        - requestedExecutionDate
+        - status
+        - lastUpdate
+      properties:
+        paymentOrderId:
+          type: string
+          description: Identificador único de la orden de pago
+          pattern: '^PO-[0-9]+$'
+          example: "PO-0001"
+        externalReference:
+          type: string
+          description: Identificador externo de la orden de pago
+          minLength: 1
+          maxLength: 100
+          example: "EXT-123"
+        debtorAccount:
+          $ref: '#/components/schemas/PaymentAccount'
+        creditorAccount:
+          $ref: '#/components/schemas/PaymentAccount'
+        instructedAmount:
+          $ref: '#/components/schemas/PaymentAmount'
+        remittanceInformation:
+          type: string
+          description: Información de remesas o referencia del pago
+          maxLength: 500
+          example: "Factura 001-123"
+        requestedExecutionDate:
+          type: string
+          format: date
+          description: Fecha de ejecución solicitada (ISO 8601 date format: YYYY-MM-DD)
+          example: "2025-10-31"
+        status:
+          $ref: '#/components/schemas/PaymentOrderStatus'
+        lastUpdate:
+          type: string
+          format: date-time
+          description: Fecha y hora de la última actualización del estado (ISO 8601)
+          example: "2025-10-30T16:25:30Z"
+
+    PaymentOrderStatusResponse:
+      type: object
+      required:
+        - paymentOrderId
+        - status
+        - lastUpdate
+      properties:
+        paymentOrderId:
+          type: string
+          description: Identificador único de la orden de pago
+          pattern: '^PO-[0-9]+$'
+          example: "PO-0001"
+        status:
+          $ref: '#/components/schemas/PaymentOrderStatus'
+        lastUpdate:
+          type: string
+          format: date-time
+          description: Fecha y hora de la última actualización del estado (ISO 8601)
+          example: "2025-10-30T16:25:30Z"
+
+    PaymentAccount:
+      type: object
+      required:
+        - iban
+      properties:
+        iban:
+          type: string
+          description: International Bank Account Number (IBAN)
+          minLength: 15
+          maxLength: 34
+          example: "EC123456789012345678"
+
+    PaymentAmount:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: number
+          format: decimal
+          description: Importe del pago
+          minimum: 0.01
+          example: 150.75
+        currency:
+          type: string
+          description: Código de moneda según ISO 4217
+          enum:
+            - USD
+            - EUR
+            - GBP
+            - JPY
+            - CAD
+            - AUD
+            - CHF
+            - CNY
+            - MXN
+            - BRL
+          example: "USD"
+
+    PaymentOrderStatus:
+      type: string
+      description: Estado de la orden de pago
+      enum:
+        - ACCEPTED
+        - PENDING
+        - PROCESSING
+        - SETTLED
+        - REJECTED
+        - FAILED
+        - CANCELLED
+      example: "ACCEPTED"
+
+    ProblemDetail:
+      type: object
+      description: |
+        Detalle de error según RFC 7807 (Problem Details for HTTP APIs).
+        Usado para respuestas de error 4xx y 5xx.
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          description: URI que identifica el tipo de problema
+          format: uri
+          default: "about:blank"
+          example: "about:blank"
+        title:
+          type: string
+          description: Título corto y legible del tipo de problema
+          example: "Bad Request"
+        status:
+          type: integer
+          description: Código de estado HTTP
+          format: int32
+          minimum: 400
+          maximum: 599
+          example: 400
+        detail:
+          type: string
+          description: Descripción detallada del problema específico
+          example: "Validation failed for object 'initiatePaymentOrderRequest'"
+        instance:
+          type: string
+          description: URI que identifica la instancia específica del problema
+          format: uri
+          example: "/payment-initiation/payment-orders"
+

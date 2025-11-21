@@ -1,0 +1,17 @@
+package com.bank.paymentinitiation;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class PaymentInitiationServiceApplication {
+
+    public PaymentInitiationServiceApplication() {
+        // Default constructor required by Spring Boot
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(PaymentInitiationServiceApplication.class, args);
+    }
+}
+

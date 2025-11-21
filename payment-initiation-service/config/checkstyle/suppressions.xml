@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+        "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+        "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<suppressions>
+    <!-- Suppress HideUtilityClassConstructor for Spring Boot Application class -->
+    <suppress files="PaymentInitiationServiceApplication\.java" checks="HideUtilityClassConstructor"/>
+    <suppress files=".*Application\.java" checks="HideUtilityClassConstructor"/>
+    
+    <!-- Suppress VisibilityModifier for Lombok @Value classes (public final fields are expected) -->
+    <suppress files=".*(PaymentAmount|ExternalReference|PayerReference|PayeeReference)\.java" checks="VisibilityModifier"/>
+    <suppress files=".*PaymentOrder\.java" checks="VisibilityModifier"/>
+    
+    <!-- Suppress FinalClass for Lombok @Value classes (Lombok generates final classes) -->
+    <suppress files=".*PaymentAmount\.java" checks="FinalClass"/>
+    
+    <!-- Suppress MagicNumber in tests (test data often uses magic numbers) -->
+    <suppress files=".*Test\.java" checks="MagicNumber"/>
+    
+    <!-- Suppress OperatorWrap for string concatenation in tests -->
+    <suppress files=".*IntegrationTest\.java" checks="OperatorWrap"/>
+    
+    <!-- Suppress CyclomaticComplexity and NPathComplexity for domain methods (sometimes necessary) -->
+    <suppress files=".*PaymentOrder\.java" checks="CyclomaticComplexity|NPathComplexity"/>
+    
+    <!-- Suppress LineLength for generated mappers and adapters (long lines sometimes necessary) -->
+    <suppress files=".*Mapper\.java|.*RepositoryAdapter\.java" checks="LineLength"/>
+    
+    <!-- Suppress UnusedImports in mapper interfaces (imports may be needed for documentation) -->
+    <suppress files=".*Mapper\.java" checks="UnusedImports"/>
+</suppressions>
+

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Exclude file for SpotBugs.
+    
+    This file excludes generated code, MapStruct implementations, JPA entities,
+    and the main application class from SpotBugs analysis.
+-->
+<FindBugsFilter>
+    <!-- Excluir código generado por OpenAPI Generator -->
+    <Match>
+        <Package name="~com\.bank\.paymentinitiation\.generated.*"/>
+    </Match>
+    
+    <!-- Excluir implementaciones de MapStruct (generadas automáticamente) -->
+    <Match>
+        <Class name="~.*MapperImpl"/>
+    </Match>
+    
+    <!-- Excluir entidades JPA (si existen) -->
+    <Match>
+        <Class name="~.*PaymentOrderEntity"/>
+    </Match>
+    
+    <!-- Excluir clase principal de Spring Boot -->
+    <Match>
+        <Class name="~.*PaymentInitiationServiceApplication"/>
+    </Match>
+</FindBugsFilter>
+

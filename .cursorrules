@@ -1,0 +1,305 @@
+# ============================================
+# Reglas para Cursor - Proyecto Payment Initiation (Spring Boot / Hexagonal / BIAN)
+# ============================================
+
+## 1. Contexto del proyecto
+
+- Proyecto: Microservicio bancario de Payment Initiation (migración SOAP → REST, BIAN PaymentOrder).
+- Tech stack:
+  - Java 21
+  - Spring Boot 3 (REST)
+  - Gradle (Groovy DSL)
+  - H2 para desarrollo/tests
+  - OpenAPI 3 (contract-first, código generado con openapi-generator)
+- Estilo arquitectónico:
+  - Arquitectura Hexagonal / Ports & Adapters
+  - Inspirado en DDD (aggregate PaymentOrder, value objects)
+  - Principios SOLID y Clean Code
+  - Enfoque TDD y alto nivel de testing
+
+Cursor debe **respetar este contexto SIEMPRE** al generar o modificar código.
+
+
+## 2. Principios de diseño (Hexagonal + SOLID + Clean Code)
+
+- Arquitectura Hexagonal:
+  - Separar **dominio**, **aplicación**, **puertos** y **adaptadores**.
+  - Ninguna clase del dominio debe depender de Spring, frameworks ni infraestructura.
+  - La capa de aplicación orquesta casos de uso; no contiene lógica de infraestructura.
+  - Los adaptadores (REST, JPA, clientes externos) implementan puertos definidos en el dominio/aplicación.
+
+- Principios SOLID:
+  - SRP: Cada clase/método con una responsabilidad clara.
+  - OCP: Abierto a extensión, cerrado a modificación (usar interfaces, estrategias, etc.).
+  - LSP, ISP, DIP: Aplicar de forma pragmática, especialmente en puertos y servicios.
+
+- Clean Code:
+  - Métodos cortos, legibles y expresivos.
+  - Nombres de clases/métodos/variables descriptivos y en inglés.
+  - Evitar código duplicado (DRY).
+  - Evitar parámetros booleanos confusos y métodos con demasiados parámetros (usa objetos/DTOs).
+  - No mezclar lógica de negocio con detalles técnicos.
+
+- TDD (cuando tenga sentido):
+  - Idealmente pensar primero en los tests (unitarios de dominio / aplicación) y después en la implementación.
+  - Al menos: para cada nuevo caso de uso o regla de negocio importante, definir tests antes de refactorizar código existente.
+
+
+## 3. Estructura de paquetes (Hexagonal)
+
+Usar una estructura hexagonal clara (ajusta el package root según el proyecto: com.bank.paymentinitiation o similar):
+
+- Dominio (reglas de negocio puras):
+  - `domain.model`      → Aggregates, Entities, Value Objects (p.ej. PaymentOrder, Account, Money, PaymentStatus)
+  - `domain.service`    → Servicios de dominio (reglas de negocio más complejas, invariantes).
+
+- Aplicación (use cases):
+  - `application.service` → Servicios de aplicación/orquestación que implementan casos de uso (Initiate, Retrieve, GetStatus).
+  - Aquí se usan puertos (interfaces) para persistencia y servicios externos.
+
+- Puertos (contratos):
+  - `port.driving` → Interfaz(es) de servicios de aplicación llamados desde fuera (REST, otros sistemas).
+  - `port.driven`  → Interfaces hacia persistencia y sistemas externos (repositories, legacy clients, etc.).
+
+- Adaptadores:
+  - `adapter.in.rest`       → Controladores REST, implementando interfaces generadas por OpenAPI.
+  - `adapter.out.persistence` → JPA/H2/R2DBC adapters, mappers entidad ↔ dominio.
+  - `adapter.out.legacy`    → Clientes a sistemas legados (si aplica).
+  - `adapter.mapper`        → MapStruct mappers (REST DTO ↔ dominio, dominio ↔ entidad).
+
+- Infraestructura / Configuración:
+  - `config` → Configuración de Spring, beans, seguridad, OpenAPI, etc.
+  - `exception` → Excepciones de aplicación y handlers globales (ControllerAdvice).
+
+No usar la típica estructura plana `controller/service/repository` sin respetar la separación hexagonal.
+
+
+## 4. Convenciones de código
+
+- Idioma: inglés para código (clases, métodos, variables, paquetes).
+- Estilo:
+  - Clases: PascalCase → `PaymentOrderService`, `PaymentInitiationController`.
+  - Métodos/variables: camelCase → `submitPaymentOrder`, `paymentOrderReference`.
+  - Constantes: UPPER_SNAKE_CASE → `MAX_RETRY_ATTEMPTS`.
+  - Paquetes en minúsculas: `com.bank.paymentinitiation.domain.model`.
+
+- Inyección de dependencias:
+  - Usar inyección por constructor.
+  - Evitar `@Autowired` en campos; preferir constructor + `@RequiredArgsConstructor` (Lombok) cuando aporte claridad.
+
+- Null-handling:
+  - Evitar explotar NullPointerException: validar inputs en el borde (controladores y servicios de aplicación).
+  - En dominio, preferir invariantes fuertes: objetos siempre válidos al construirse.
+
+- DTO vs Dominio vs Entidad JPA:
+  - Nunca exponer entidades JPA directamente en la API REST.
+  - Mantener DTOs REST separados de modelos de dominio y entidades de persistencia.
+  - Usar mappers (MapStruct) para las conversiones.
+
+
+## 5. Testing (TDD, Unit, Integration)
+
+- Tipos de tests:
+  - Unitarios de dominio:
+    - Tests de PaymentOrder y value objects.
+    - Reglas de negocio, invariantes, cambios de estado.
+  - Unitarios de aplicación:
+    - Servicios de aplicación, mockeando puertos (repositories, legacy).
+  - Tests de integración:
+    - Usar `@SpringBootTest` + `WebTestClient` (no RestTemplate).
+    - H2 real, sin mocks, para validar el stack completo.
+  - Opcionales: @DataJpaTest para repositorios.
+
+- Frameworks:
+  - JUnit 5, AssertJ, Mockito.
+  - WebTestClient para E2E de endpoints REST.
+
+- Estilo de tests:
+  - Usar patrón AAA (Arrange – Act – Assert).
+  - Nombres de métodos: `shouldXWhenY()` o `shouldReturnXForY()`.
+  - Usar `@DisplayName` con descripciones claras en lenguaje natural.
+
+- Cobertura:
+  - Objetivo mínimo:
+    - Dominio: ≥ 85–90%.
+    - Aplicación: ≥ 90–95%.
+    - Adaptadores críticos (REST/mappers/persistencia): cubrir casos clave.
+  - No añadir tests triviales que no aporten valor.
+
+
+## 6. Logs y debugging (REGLA ANTI-GREP/TAIL)
+
+Para cualquier comando que se use para compilar, testear o verificar calidad:
+
+- Ejemplos:
+  - `./gradlew test --no-daemon`
+  - `./gradlew build --no-daemon`
+  - `./gradlew check --no-daemon`
+  - `./gradlew checkstyleMain --no-daemon`
+  - `./gradlew spotbugsMain --no-daemon`
+
+REGLA OBLIGATORIA:
+- **NO usar**:
+  - `| grep "FAILED"`
+  - `| grep -A 10`
+  - `| tail -3`
+  - `| tail -10`
+  - `| head`
+  - `| sed`
+  - `| awk`
+  - u otros filtros que recorten el log.
+
+En su lugar:
+1. Mostrar siempre el **log completo** del error.
+2. Si el log es muy largo, mostrarlo completo y luego hacer un resumen:
+   - Excepción principal
+   - "Caused by"
+   - Archivo y línea afectados
+   - Módulo afectado (JUnit, Checkstyle, SpotBugs, WebTestClient, etc.)
+3. Basar la corrección SIEMPRE en ese log completo.
+4. Volver a ejecutar el comando hasta que pase sin errores.
+
+Nunca “arreglar” a ciegas sin ver el log completo.
+Nunca deshabilitar tests ni plugins de calidad para evitar errores.
+
+
+## 7. Endpoints REST / API (Contract-First)
+
+- Contract-first:
+  - El contrato OpenAPI es la fuente de verdad.
+  - Los controladores deben implementar las interfaces generadas (por ejemplo `PaymentOrdersApi`).
+  - No modificar a mano el código generado; extenderlo vía adaptadores y servicios.
+
+- Endpoints requeridos (según challenge y colección Postman):
+  - `POST /payment-initiation/payment-orders` → Iniciar orden de pago (Initiate PaymentOrder)
+    - Request body: PaymentOrderInitiateRequest (externalReference, debtorAccount.iban, creditorAccount.iban, instructedAmount.{amount, currency}, remittanceInformation, requestedExecutionDate)
+    - Response 201: PaymentOrderInitiateResponse con paymentOrderId y status
+    - Mapeo desde SOAP: SubmitPaymentOrder → Initiate PaymentOrder (BIAN)
+  - `GET /payment-initiation/payment-orders/{paymentOrderId}` → Recuperar orden de pago completa (Retrieve PaymentOrder)
+    - Response 200: PaymentOrder con toda la información
+  - `GET /payment-initiation/payment-orders/{paymentOrderId}/status` → Obtener solo el estado (Retrieve PaymentOrder Status)
+    - Response 200: PaymentOrderStatus con paymentOrderId, status, lastUpdate
+    - Mapeo desde SOAP: GetPaymentOrderStatus → Retrieve PaymentOrder Status (BIAN)
+
+- Mapeo SOAP Legacy → REST BIAN:
+  - SubmitPaymentOrderRequest → PaymentOrderInitiateRequest
+    - externalId → externalReference
+    - debtorIban → debtorAccount.iban
+    - creditorIban → creditorAccount.iban
+    - amount → instructedAmount.amount
+    - currency → instructedAmount.currency
+    - remittanceInfo → remittanceInformation
+    - requestedExecutionDate → requestedExecutionDate (mantener)
+  - SubmitPaymentOrderResponse → PaymentOrderInitiateResponse
+    - paymentOrderId → paymentOrderId (mantener)
+    - status → status (mantener)
+  - GetPaymentOrderStatusRequest/Response → PaymentOrderStatus
+    - Estructura similar, mantener campos básicos
+
+- Buenas prácticas REST:
+  - Validar inputs con `@Valid` y anotaciones de Bean Validation en DTOs.
+  - Devolver códigos HTTP correctos:
+    - 201 Created para creación de PaymentOrder
+    - 200 OK para consultas
+    - 400 Bad Request para errores de validación
+    - 404 Not Found si el PaymentOrder no existe
+    - 422 Unprocessable Entity para errores de negocio
+  - Usar ProblemDetail / RFC 7807 para errores (especialmente 4xx/5xx).
+  - No filtrar detalles internos sensibles en los mensajes de error.
+
+- Arquitectura hexagonal en REST:
+  - Controlador REST → puerto driving → servicio de aplicación → dominio → puerto driven → adaptador (persistencia/externo).
+  - El controlador NO debe contener lógica de negocio.
+
+
+## 8. Persistencia (JPA / H2)
+
+- Entidades JPA:
+  - En paquetes `adapter.out.persistence.entity`.
+  - Usar `@Entity`, `@Table`, `@Id`, etc., de forma clara.
+  - No poner lógica de negocio dentro de las entidades JPA.
+
+- Repositorios:
+  - Interfaces `JpaRepository` en `adapter.out.persistence.jpa`.
+  - Implementar un adapter que use estos repositorios para cumplir el puerto de persistencia.
+
+- Base de datos:
+  - H2 en memoria para desarrollo/tests.
+  - Limpiar estado en tests (@BeforeEach → deleteAll()) cuando sea necesario.
+
+
+## 9. Logging y seguridad
+
+- Logging:
+  - Usar SLF4J (Lombok @Slf4j aceptable).
+  - Niveles:
+    - ERROR: errores graves.
+    - WARN: condiciones anómalas.
+    - INFO: eventos de negocio clave (creación de PaymentOrder, cambios de estado).
+    - DEBUG: detalles de depuración (solo en entornos apropiados).
+  - Nunca loguear información sensible (PAN, PIN, contraseñas, datos personales).
+
+- Seguridad:
+  - Validar y sanear entradas.
+  - No exponer ids internos de sistemas que no deban verse.
+  - Manejar correctamente cabeceras, auth, etc. (cuando se implemente).
+
+## 10. Documentación
+
+- Mantener actualizado:
+  - README con:
+    - contexto del proyecto
+    - cómo ejecutar local y con Docker
+    - cómo correr tests y verificaciones de calidad.
+  - OpenAPI:
+    - en `openapi/openapi.yaml` o ruta equivalente.
+- Documentar:
+  - Casos de uso relevantes.
+  - Reglas de negocio importantes del dominio Payment Initiation.
+  - Decisiones arquitectónicas clave (pueden vivir en `/ai/decisions.md` o similar).
+
+## 11. Comandos útiles (recordatorio)
+
+- `./gradlew clean build` → Compilar + tests.
+- `./gradlew test` → Ejecutar tests.
+- `./gradlew check` → Tests + calidad (Checkstyle, SpotBugs, etc.).
+- `./gradlew bootRun` → Levantar la aplicación.
+
+SIEMPRE revisar que `./gradlew check` pase antes de considerar un cambio como "listo".
+
+## 12. Entregables del Challenge (VALIDACIÓN FINAL)
+
+Según los documentos del challenge, los entregables que se validarán incluyen:
+
+### 12.1. Funcionalidad Core
+- ✅ Implementación completa de los 3 endpoints REST según especificación BIAN:
+  - POST /payment-initiation/payment-orders (Initiate)
+  - GET /payment-initiation/payment-orders/{id} (Retrieve)
+  - GET /payment-initiation/payment-orders/{id}/status (Retrieve Status)
+- ✅ Mapeo correcto desde el modelo SOAP legacy al modelo REST BIAN
+- ✅ Persistencia de PaymentOrders (usando H2 para tests/desarrollo)
+- ✅ Manejo de estados de PaymentOrder (ACCEPTED, SETTLED, etc.)
+
+### 12.2. Calidad de Código
+- ✅ Arquitectura Hexagonal implementada correctamente
+- ✅ Separación clara de dominio, aplicación, puertos y adaptadores
+- ✅ Código limpio siguiendo principios SOLID
+- ✅ Tests unitarios y de integración con cobertura adecuada
+- ✅ Validación de inputs y manejo de errores apropiado
+
+### 12.3. Documentación
+- ✅ README actualizado con instrucciones de ejecución
+- ✅ OpenAPI/Swagger documentando la API
+- ✅ Documentación de decisiones arquitectónicas si aplica
+
+### 12.4. Validación con Postman
+- ✅ Los endpoints deben responder correctamente según la colección Postman proporcionada
+- ✅ Estructura de respuestas alineada con el estándar BIAN PaymentOrder
+
+**IMPORTANTE**: Al implementar cada parte, validar que:
+1. Los endpoints coincidan con la colección Postman (`postman_collection.json`)
+2. El mapeo desde SOAP legacy sea correcto (ver archivos en `legacy/samples/`)
+3. La estructura siga el estándar BIAN para Payment Initiation
+4. Todos los tests pasen (`./gradlew check`)
+
+# FIN DE LAS REGLAS

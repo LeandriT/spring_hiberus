@@ -1,0 +1,190 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.0'
+    id 'io.spring.dependency-management' version '1.1.4'
+    id 'org.openapi.generator' version '7.0.1'
+    id 'checkstyle'
+    id 'com.github.spotbugs' version '6.0.0'
+    id 'jacoco'
+}
+
+group = 'com.bank.paymentinitiation'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = JavaVersion.VERSION_21
+targetCompatibility = JavaVersion.VERSION_21
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+dependencies {
+    // Spring Boot Starters
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    
+    // H2 Database
+    runtimeOnly 'com.h2database:h2'
+    
+    // MapStruct
+    implementation "org.mapstruct:mapstruct:1.5.5.Final"
+    annotationProcessor "org.mapstruct:mapstruct-processor:1.5.5.Final"
+    
+    // Lombok
+    compileOnly "org.projectlombok:lombok:1.18.30"
+    annotationProcessor "org.projectlombok:lombok:1.18.30"
+    annotationProcessor "org.projectlombok:lombok-mapstruct-binding:0.2.0"
+    
+    // OpenAPI Generated Code Dependencies
+    implementation "io.swagger.core.v3:swagger-annotations:2.2.21"
+    implementation "org.openapitools:jackson-databind-nullable:0.2.6"
+    implementation "jakarta.validation:jakarta.validation-api:3.0.2"
+    implementation "jakarta.annotation:jakarta.annotation-api:2.1.1"
+    
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework:spring-webflux'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// OpenAPI Generator Configuration
+openApiGenerate {
+    generatorName = 'spring'
+    inputSpec = "$rootDir/openapi/openapi.yaml"
+    outputDir = "$buildDir/generated"
+    apiPackage = 'com.bank.paymentinitiation.generated.api'
+    modelPackage = 'com.bank.paymentinitiation.generated.model'
+    invokerPackage = 'com.bank.paymentinitiation.generated.invoker'
+    configOptions = [
+        interfaceOnly: 'true',
+        useSpringBoot3: 'true',
+        useTags: 'true',
+        dateLibrary: 'java8',
+        serializationLibrary: 'jackson',
+        hideGenerationTimestamp: 'true'
+    ]
+}
+
+// Add generated sources to main source set
+sourceSets {
+    main {
+        java {
+            srcDir("$buildDir/generated/src/main/java")
+        }
+    }
+}
+
+// Make compileJava depend on openApiGenerate
+tasks.named('compileJava') {
+    dependsOn 'openApiGenerate'
+}
+
+// Checkstyle Configuration
+checkstyle {
+    toolVersion = '10.12.5'
+    configFile = file("$rootDir/config/checkstyle/checkstyle.xml")
+    configProperties = ['checkstyle.suppressions.file': "$rootDir/config/checkstyle/suppressions.xml"]
+    ignoreFailures = false
+    maxWarnings = 100  // Permite hasta 100 warnings por tarea (main o test)
+}
+
+// SpotBugs Configuration
+spotbugs {
+    toolVersion = '4.8.2'
+    ignoreFailures = false
+}
+
+tasks.named('spotbugsMain') {
+    effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+    reportLevel = com.github.spotbugs.snom.Confidence.valueOf('HIGH')
+    excludeFilter = file("${rootProject.projectDir}/config/spotbugs/exclude.xml")
+    
+    reports {
+        xml.required = false
+        html.required = true
+    }
+}
+
+tasks.named('spotbugsTest') {
+    effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+    reportLevel = com.github.spotbugs.snom.Confidence.valueOf('HIGH')
+    excludeFilter = file("${rootProject.projectDir}/config/spotbugs/exclude.xml")
+    
+    reports {
+        xml.required = false
+        html.required = true
+    }
+}
+
+// JaCoCo Configuration
+jacoco {
+    toolVersion = '0.8.11'
+}
+
+// Excluir de cobertura JaCoCo
+def jacocoExcludes = [
+    '**/generated/**',                    // Código generado
+    '**/*PaymentOrderEntity.class',       // Entidades JPA
+    '**/*MapperImpl.class',               // Implementaciones de MapStruct
+    '**/PaymentInitiationServiceApplication.class',  // Clase principal
+    '**/config/**'                        // Configuración
+]
+
+tasks.named('jacocoTestReport') {
+    reports {
+        xml.required = true
+        html.required = true
+        html.outputLocation = layout.buildDirectory.dir('reports/jacoco/html')
+    }
+}
+
+tasks.named('jacocoTestCoverageVerification') {
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.85  // Cobertura mínima >= 85%
+            }
+        }
+    }
+}
+
+// Configurar exclusiones después de que se compile el código
+afterEvaluate {
+    tasks.named('jacocoTestReport').configure {
+        classDirectories.setFrom(
+            files(classDirectories.files.collect {
+                fileTree(dir: it, excludes: jacocoExcludes)
+            })
+        )
+    }
+    
+    tasks.named('jacocoTestCoverageVerification').configure {
+        classDirectories.setFrom(
+            files(classDirectories.files.collect {
+                fileTree(dir: it, excludes: jacocoExcludes)
+            })
+        )
+    }
+}
+
+// Configuración del task check
+tasks.named('check') {
+    dependsOn 'checkstyleMain'
+    dependsOn 'checkstyleTest'
+    dependsOn 'spotbugsMain'
+    dependsOn 'spotbugsTest'
+    dependsOn 'test'
+    dependsOn 'jacocoTestCoverageVerification'
+    finalizedBy 'jacocoTestReport'  // Ejecuta después de los tests
+}
+

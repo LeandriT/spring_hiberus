@@ -1,10 +1,7 @@
 # Compiled class file
 *.class
 
-# Log file
-*.log
-logs/
-*.log.*
+# Log files (consolidated in Application Logs section)
 
 # BlueJ files
 *.ctxt
@@ -44,6 +41,10 @@ bin/
 .vscode/
 *.code-workspace
 
+### Cursor IDE ###
+.cursor/
+.cursorrules.local
+
 ### NetBeans ###
 nbproject/private/
 nbbuild/
@@ -64,7 +65,6 @@ Desktop.ini
 $RECYCLE.BIN/
 
 ### Linux ###
-*~
 .directory
 .Trash-*
 
@@ -102,23 +102,34 @@ logs/
 *.log
 application.log
 application-*.log
+spring-boot-*.log
+spring.log
 
 ### Reports ###
 build/reports/
 test-results/
+
+### JaCoCo ###
 *.exec
+build/jacoco/
+.jacoco/
 
 ### Generated Code ###
 build/generated/
 
-### Docker ###
-.dockerignore
-# Keep Dockerfile and docker-compose.yml
+### SpotBugs ###
+build/spotbugs/
+spotbugsMain-analyse-class-file.txt
+spotbugsTest-analyse-class-file.txt
 
-### Database Files ###
+### Docker ###
+# Keep .dockerignore, Dockerfile and docker-compose.yml (they should be in repo)
+
+### Database Files (H2) ###
 *.mv.db
 *.trace.db
 *.lock.db
+*.h2.db
 *.db
 data/
 
@@ -126,6 +137,8 @@ data/
 .env
 .env.local
 .env.*.local
+application-local.yml
+application-*.local.yml
 
 ### AI/ML Generated Files (if large) ###
 # Uncomment if you want to exclude large AI-generated files
