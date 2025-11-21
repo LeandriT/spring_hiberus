@@ -1,0 +1,34 @@
+# Contrato OpenAPI 3.0 - Versión Inicial Generada
+# Fecha: PASO 3
+# Origen: Generado según análisis del WSDL y Postman collection
+
+# NOTAS SOBRE ESTA VERSIÓN:
+# - Esta es la versión inicial del contrato OpenAPI generada en el PASO 3
+# - Se mantiene como referencia para comparar con versiones futuras
+# - El archivo actual está en: openapi/openapi.yaml
+
+# DECISIONES CLAVE IMPLEMENTADAS:
+# 1. IBANs con minLength: 15, maxLength: 34 (validación de longitud, no formato completo)
+# 2. Currency como enum sin pattern (evita errores de validación en código generado)
+# 3. PaymentOrderId con pattern ^PO-[0-9]+$ (alineado con formato del WSDL)
+# 4. PaymentStatus enum completo con todos los estados BIAN
+# 5. ProblemDetail según RFC 7807 para manejo de errores
+# 6. PaymentAmount con minimum: 0.01 (no puede ser cero ni negativo)
+
+# CORRECCIONES APLICADAS:
+# - Ninguna corrección manual fue necesaria en esta versión inicial
+# - El contrato se generó correctamente y compila sin errores
+# - Warnings menores sobre formato "decimal" (no crítico)
+
+# PRÓXIMOS PASOS:
+# - El contrato se usará en el PASO 4 para configurar OpenAPI Generator
+# - Los endpoints se implementarán en el PASO 10 (Adaptador REST)
+# - Los mappers se crearán en el PASO 9 (MapStruct)
+
+# REFERENCIAS:
+# - WSDL analizado: Prueba-tecnica-Java-migracion/legacy/PaymentOrderService.wsdl
+# - Postman collection: Prueba-tecnica-Java-migracion/postman_collection.json
+# - Análisis completo: ai/decisions.md (sección PASO 2)
+
+# El contenido completo del contrato está en: openapi/openapi.yaml
+

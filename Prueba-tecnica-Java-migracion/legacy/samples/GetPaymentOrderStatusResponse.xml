@@ -1,0 +1,5 @@
+<GetPaymentOrderStatusResponse xmlns="http://legacy.bank/payments">
+  <paymentOrderId>PO-0001</paymentOrderId>
+  <status>SETTLED</status>
+  <lastUpdate>2025-10-30T16:25:30Z</lastUpdate>
+</GetPaymentOrderStatusResponse>
