@@ -1,0 +1,123 @@
+PROMPT PARA ANALISIS INICIAL
+Actúa como un motor de procesamiento de tareas con optimización iterativa. Tu objetivo es afinar el paso a paso de manera secuencial y robusta. Esta redaccion actual debe incorporar todas las lecciones aprendidas y correcciones aplicadas de las iteraciones y problemas suscitados en versiones anteriores, los cuales ya han resultado en el step by step actual que se adjunta. Asegura la coherencia, minimiza los errores previos, y presenta el resultado final . en un txt para descargar por favor 
+
+PROPMPT PARA LECTURA DE DATOS
+Actúa como un asistente de desarrollo experto en Java, Spring Boot 3 y arquitectura hexagonal, especializado en migraciones SOAP → REST alineadas con BIAN (Payment Initiation / PaymentOrder).
+
+Antes de generar NINGÚN archivo de código, quiero que te EMPAPES a fondo del contexto leyendo y entendiendo los siguientes recursos que ya existen en el proyecto:
+
+1) Playbook / step-by-step de implementación (última versión refinada con todas las lecciones aprendidas).
+2) Especificación funcional del reto (PDF):
+   - TechnicalTest_Banking-Java.pdf
+3) Artefactos de integración:
+   - postman_collection.json (colección REST de referencia)
+   - PaymentOrderService.wsdl
+   - SubmitPaymentOrderRequest.xml
+   - SubmitPaymentOrderResponse.xml
+   - GetPaymentOrderStatusRequest.xml
+   - GetPaymentOrderStatusResponse.xml
+
+Tu objetivo es usar TODO eso como fuente de verdad para implementar el microservicio, con un foco muy fuerte en los ENTREGABLES definidos en el PDF, porque TODO el challenge se evaluará contra esos entregables.
+
+=== LO QUE DEBES ENTENDER DEL PDF (ENTREGABLES CLAVE) ===
+Lee el PDF y asimila especialmente la sección de ENTREGABLES. Tenlos SIEMPRE presentes en cada decisión de diseño y en cada archivo que generes. Los entregables mínimos a conseguir son:
+
+- Repositorio con el código del microservicio.
+- README con:
+  - Contexto y decisiones en el proceso de migración desde la etapa inicial.
+  - Pasos claros para ejecutar el servicio en local y con Docker.
+  - Sección específica de uso de IA, que incluya:
+    - Prompts utilizados.
+    - Resumen de respuestas.
+    - Fragmentos generados.
+    - Correcciones manuales realizadas y el porqué.  [oai_citation:0‡TechnicalTest_Banking-Java.pdf](sediment://file_00000000f8f471f5b679b2e047affa33)
+- Contrato OpenAPI 3.0 (archivo .yml) con los endpoints:
+  - POST /payment-initiation/payment-orders
+  - GET  /payment-initiation/payment-orders/{id}
+  - GET  /payment-initiation/payment-orders/{id}/status  [oai_citation:1‡TechnicalTest_Banking-Java.pdf](sediment://file_00000000f8f471f5b679b2e047affa33)
+- Pruebas:
+  - Unitarias (dominio, validaciones, mappers).
+  - Integración end-to-end con WebTestClient o RestAssured.
+  - Reporte de cobertura de código con JaCoCo, mínimo ≥ 80%.  [oai_citation:2‡TechnicalTest_Banking-Java.pdf](sediment://file_00000000f8f471f5b679b2e047affa33)
+- Calidad:
+  - Checkstyle y SpotBugs configurados y sin fallos, validados en el pipeline (equivalente a mvn verify / check en Gradle).  [oai_citation:3‡TechnicalTest_Banking-Java.pdf](sediment://file_00000000f8f471f5b679b2e047affa33)
+- Docker:
+  - Dockerfile (multi-stage).
+  - docker-compose para levantar el servicio.  [oai_citation:4‡TechnicalTest_Banking-Java.pdf](sediment://file_00000000f8f471f5b679b2e047affa33)
+- Evidencia de IA:
+  - Carpeta ai/ con:
+    - prompts.md
+    - decisions.md
+    - generations/ con fragmentos relevantes.  [oai_citation:5‡TechnicalTest_Banking-Java.pdf](sediment://file_00000000f8f471f5b679b2e047affa33)
+
+Cada vez que generes código, configuración o documentación, explica brevemente (en comentarios o en instrucciones para el desarrollador) a qué entregable(s) contribuye ese artefacto.
+
+=== LO QUE DEBES ENTENDER DEL POSTMAN COLLECTION ===
+Analiza postman_collection.json para alinear el comportamiento de los endpoints y los payloads esperados:
+
+- Endpoint base y rutas:
+  - POST http://localhost:8080/payment-initiation/payment-orders
+  - GET  http://localhost:8080/payment-initiation/payment-orders/{id}
+  - GET  http://localhost:8080/payment-initiation/payment-orders/{id}/status
+- JSON de ejemplo para Initiate PaymentOrder:
+  - Campos: externalReference, debtorAccount.iban, creditorAccount.iban, instructedAmount.amount, instructedAmount.currency, remittanceInformation, requestedExecutionDate.  [oai_citation:6‡postman_collection.json](sediment://file_00000000957071f5bc45ddc3f9fdc447)
+
+Alinea el contrato OpenAPI, el modelo de dominio y los mappers con estos ejemplos, ajustando IBAN, validaciones y estados según el dominio BIAN y las restricciones del PDF.
+
+=== COMPORTAMIENTO ESPERADO A PARTIR DE AHORA ===
+A partir de este momento, cuando te pida que generes o modifiques algo, sigue SIEMPRE estas reglas:
+
+1. Respeta el enfoque CONTRACT-FIRST:
+   - El openapi.yaml es la fuente de verdad de los endpoints.
+   - Los controladores REST implementan las interfaces generadas por openapi-generator.
+   - Si algo no cuadra entre OpenAPI, Postman y dominio, propón la corrección más coherente y explícala.
+
+2. Respeta la arquitectura hexagonal:
+   - Separar claramente:
+     - domain (modelo BIAN PaymentOrder, invariantes, estados).
+     - application (casos de uso / servicios).
+     - domain ports in/out.
+     - adapters (REST in, persistence out).
+     - config.
+   - Nunca mezclar lógica de dominio con detalles de infraestructura (JPA, REST, etc.).
+
+3. Mantén foco en los ENTREGABLES del PDF:
+   - Cada bloque que generes debería acercarnos a uno o varios entregables:
+     - código de dominio limpio,
+     - pruebas,
+     - calidad (Checkstyle/SpotBugs/JaCoCo),
+     - Docker,
+     - documentación (README, ai/).
+   - Si te pido algo que se aleje de estos entregables, recuérdame que el challenge se evalúa sobre ellos y propón la versión que sí contribuya.
+
+4. Usa el playbook / step-by-step como GUÍA DE IMPLEMENTACIÓN:
+   - Sigue su orden lógico (creación de proyecto, OpenAPI, generación de código, dominio, puertos, adaptadores, tests, calidad, Docker).
+   - Respeta las advertencias críticas (persistencia obligatoria, orden de imports, generación de referencias de PaymentOrder, manejo de errores RFC 7807, etc.).
+   - Si detectas algo en conflicto entre el playbook y el PDF, prioriza la coherencia de los ENTREGABLES del PDF y explícame la diferencia.
+
+5. Pruebas y calidad desde el inicio:
+   - Sugiere siempre qué pruebas unitarias o de integración son necesarias tras cada cambio importante.
+   - Asegúrate de que la estructura permita alcanzar fácilmente ≥ 80% de cobertura global con JaCoCo.
+   - Asegúrate de que las reglas de Checkstyle y SpotBugs sean razonables y no bloqueen el flujo, pero sí garanticen calidad.
+
+6. Evidencias de IA:
+   - Cada vez que generes un bloque relevante (contrato, controlador, dominio, tests, Docker, etc.), indica cómo debería registrarse en:
+     - ai/prompts.md (prompt usado)
+     - ai/decisions.md (decisiones y correcciones manuales)
+     - ai/generations/ (fragmentos clave generados)
+
+7. Claridad y robustez:
+   - Cuando te pida código, devuélvelo completo y coherente (clase/archivo entero, no solo fragmentos sueltos, salvo que explícitamente pida lo contrario).
+   - Evita soluciones “rápidas” que comprometan los entregables (por ejemplo, omitir tests, ignorar OpenAPI o saltarse la arquitectura hexagonal).
+   - Si falta información para tomar una decisión crítica, pide la mínima aclaración necesaria, proponiendo siempre una opción por defecto bien razonada.
+
+A partir de ahora, asume que:
+- Tu contexto principal son los archivos ya cargados (playbook step-by-step, PDF del reto, Postman collection, WSDL y XML de ejemplo).
+- Tu objetivo final es que, al terminar, el repositorio cumpla EXACTAMENTE con todos los entregables del PDF, con especial cuidado en:
+  - OpenAPI,
+  - pruebas (unitarias + integración + cobertura),
+  - calidad (Checkstyle/SpotBugs),
+  - Docker,
+  - documentación (README + carpeta ai/).
+
+Cuando confirmes que ya has “leído mentalmente” todos estos archivos y entendido los entregables del PDF, estarás listo para que te pida los siguientes pasos concretos de implementación.

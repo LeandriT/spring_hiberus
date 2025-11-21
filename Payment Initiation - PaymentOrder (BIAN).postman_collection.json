@@ -1,0 +1,83 @@
+{
+	"info": {
+		"_postman_id": "7c33761d-7b1a-4bcd-afe8-1e4bfaf30b1d",
+		"name": "Payment Initiation - PaymentOrder (BIAN)",
+		"description": "Colección mínima para validar el microservicio migrado (sin SOAP).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "1378372"
+	},
+	"item": [
+		{
+			"name": "POST Initiate PaymentOrder",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"externalReference\": \"EXT-1\",\n    \"debtorAccount\": {\n        \"iban\": \"EC12DEBTORASDFFF\"\n    },\n    \"creditorAccount\": {\n        \"iban\": \"EC98CREDITORDSDSD\"\n    },\n    \"instructedAmount\": {\n        \"amount\": 150.75,\n        \"currency\": \"USD\"\n    },\n    \"remittanceInformation\": \"Factura 001-123\",\n    \"requestedExecutionDate\": \"2025-12-18\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/payment-initiation/payment-orders",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"payment-initiation",
+						"payment-orders"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET Retrieve PaymentOrder",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/payment-initiation/payment-orders/PO-3692622630338963",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"payment-initiation",
+						"payment-orders",
+						"PO-3692622630338963"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET Retrieve PaymentOrder Status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/payment-initiation/payment-orders/PO-3692622630338963/status",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"payment-initiation",
+						"payment-orders",
+						"PO-3692622630338963",
+						"status"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

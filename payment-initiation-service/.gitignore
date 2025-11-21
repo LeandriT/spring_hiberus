@@ -1,0 +1,120 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Compiled class files
+*.class
+
+# Package Files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+# VS Code
+.vscode/
+
+# NetBeans
+nbproject/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# Mac
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# H2 Database
+*.mv.db
+*.trace.db
+*.lock.db
+
+# Generated code (temporal, se regenera)
+build/generated/
+
+# MapStruct generated implementations
+**/*MapperImpl.class
+
+# Test results
+**/test-results/
+**/reports/
+
+# JaCoCo
+**/jacoco/
+*.exec
+
+# SpotBugs
+**/spotbugs/
+spotbugs*.xml
+
+# Checkstyle
+**/checkstyle/
+checkstyle*.xml
+
+# Application properties (local/development)
+application-local.yml
+application-local.yaml
+application-dev.yml
+application-dev.yaml
+application-*.properties
+!application.yml
+!application-docker.yml
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Docker volumes
+docker-data/
+
+# JVM crash logs
+hs_err_pid*
+replay_pid*
+
+# Backup files
+*.bak
+*.swp
+*~
+.*.sw?
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+

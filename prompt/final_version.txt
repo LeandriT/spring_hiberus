@@ -1,0 +1,1490 @@
+
+
+===== /mnt/data/prompt_v1.txt =====
+BIAN PAYMENT INITIATION – CURSOR PRO PLAYBOOK (JAVA 21)
+═══════════════════════════════════════════════════════
+
+NOTA IMPORTANTE: Este playbook ha sido refinado y ajustado basándose en la implementación 
+exitosa del challenge. Incluye todas las correcciones y mejoras identificadas durante el 
+desarrollo, incluyendo soluciones a problemas comunes con SpotBugs, MapStruct, Checkstyle, 
+JaCoCo y configuración de Docker.
+
+Versión: 1.4 (Refinada post-implementación completa con todas las lecciones aprendidas)
+Última actualización: Noviembre 2025
+
+MEJORAS EN ESTA VERSIÓN:
+- ✅ Guía completa y detallada sobre orden de imports en Checkstyle (PASO 0 y PASO 14)
+- ✅ Ejemplos concretos de orden correcto e incorrecto de imports con código completo
+- ✅ Instrucciones mejoradas sobre manejo de logs completos (sin grep/tail)
+- ✅ Soluciones detalladas para errores comunes de ImportOrder con mensajes específicos
+- ✅ Verificación paso a paso antes de continuar al siguiente paso
+- ✅ Advertencias sobre IBANs en tests (deben cumplir minLength: 15 de OpenAPI)
+- ✅ Ejemplos actualizados en Postman collection con IBANs válidos
+- ✅ PASO 8 expandido y mejorado: especifica claramente que la persistencia DEBE completarse completamente (entidad, repositorio, mapper, adaptador)
+- ✅ Advertencias críticas sobre dependencias entre pasos (persistencia antes de tests de integración)
+- ✅ Instrucciones de verificación obligatorias después del PASO 8
+- ✅ Ejemplos de código completos para PaymentOrderRepositoryAdapter y PaymentOrderReferenceGenerator
+- ✅ Corrección crítica: PaymentOrderReferenceGenerator debe generar IDs numéricos (^PO-[0-9]+$) según OpenAPI, no UUIDs
+- ✅ Instrucciones para tests adicionales necesarios para alcanzar 85% de cobertura (PASO 12 y PASO 14)
+- ✅ Advertencias sobre fechas en tests (deben ser futuras para pasar validación del dominio)
+- ✅ Instrucciones mejoradas sobre manejo de actualizaciones en PaymentOrderRepositoryAdapter (preservar ID)
+- ✅ Corrección de maxWarnings en Checkstyle (100 en lugar de 10 para permitir warnings aceptables)
+
+======================================================
+SECCIÓN A – PASOS PARA IMPLEMENTAR EL CHALLENGE CON CURSOR
+======================================================
+
+Contexto rápido
+---------------
+- Dominio BIAN: Payment Initiation
+- BQ principal: PaymentOrder
+- Migración: SOAP → REST (BIAN-aligned)
+- Arquitectura: Hexagonal (Ports & Adapters)
+- Enfoque: Contract-First con OpenAPI 3.0
+- Stack:
+  - Java 21
+  - Spring Boot 3 (Spring MVC, NO WebFlux en runtime)
+  - H2 como base de datos
+  - Gradle (Groovy DSL)
+  - MapStruct para mapeos
+  - WebTestClient para tests de integración
+- Artefactos de soporte:
+  - WSDL legacy: PaymentOrderService.wsdl
+  - XML ejemplos: SubmitPaymentOrder / GetPaymentOrderStatus (request/response)
+  - Colección Postman: postman_collection.json (endpoints REST a validar)
+
+Los siguientes pasos están pensados para copiarlos en Cursor Pro por bloques y dejar que genere el código, mientras tú
+revisas, corriges y documentas el uso de IA en la carpeta ai/.
+
+⚠️ INSTRUCCIONES DE USO:
+1. Copia cada PASO individualmente en Cursor Pro.
+2. Revisa el código generado antes de continuar al siguiente paso.
+3. Ejecuta tests después de cada paso crítico (PASO 4, PASO 8, PASO 9, PASO 10, etc.).
+4. Documenta cualquier corrección manual en ai/decisions.md.
+5. Los pasos marcados con ⚠️ IMPORTANTE contienen correcciones críticas que deben aplicarse.
+
+⚠️ CRÍTICO - PERSISTENCIA OBLIGATORIA:
+- El PASO 8 (H2 + JPA) es OBLIGATORIO y debe completarse COMPLETAMENTE antes de continuar.
+- Sin la persistencia implementada (PaymentOrderEntity, PaymentOrderJpaRepository, PaymentOrderPersistenceMapper, PaymentOrderRepositoryAdapter), 
+  los endpoints REST NO funcionarán y los tests de integración fallarán con UnsupportedOperationException.
+- NO continúes al PASO 9 hasta que el PASO 8 esté completamente implementado y verificado.
+- Verifica que PaymentOrderRepositoryAdapter.save() y findByReference() estén implementados (no deben lanzar excepciones).
+
+
+PASO 0 – Crear proyecto base (Java 21 + Gradle + Spring MVC + H2)
+-----------------------------------------------------------------
+Prompt para Cursor:
+
+Crea un proyecto Spring Boot 3 con Java 21 usando Gradle (Groovy DSL).
+Actúa como un generador de proyectos y crea lo siguiente:
+
+- Nombre del proyecto (crear carpeta): payment-initiation-service
+- Group: com.bank.paymentinitiation
+- Paquete base: com.bank.paymentinitiation
+
+En build.gradle configura:
+
+- Plugins:
+  - id 'java'
+  - id 'org.springframework.boot' version '3.2.0'
+  - id 'io.spring.dependency-management' version '1.1.4'
+  - id 'org.openapi.generator' version '7.0.1'
+  - id 'checkstyle'
+  - id 'com.github.spotbugs' version '6.0.0'
+  - id 'jacoco'
+
+- Java 21:
+  - sourceCompatibility = JavaVersion.VERSION_21
+  - targetCompatibility = JavaVersion.VERSION_21
+
+- Dependencias principales:
+  - implementation 'org.springframework.boot:spring-boot-starter-web'           // Spring MVC
+  - implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+  - implementation 'org.springframework.boot:spring-boot-starter-validation'
+  - implementation 'org.springframework.boot:spring-boot-starter-actuator'
+  - runtimeOnly  'com.h2database:h2'
+  - MapStruct:
+    - implementation "org.mapstruct:mapstruct:1.5.5.Final"
+    - annotationProcessor "org.mapstruct:mapstruct-processor:1.5.5.Final"
+  - Lombok:
+    - compileOnly "org.projectlombok:lombok:1.18.30"
+    - annotationProcessor "org.projectlombok:lombok:1.18.30"
+    - annotationProcessor "org.projectlombok:lombok-mapstruct-binding:0.2.0"
+  - Tests:
+    - testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    - testImplementation 'org.springframework:spring-webflux'   // solo para WebTestClient
+
+Configura:
+- test { useJUnitPlatform() }
+- jacoco básico (toolVersion, reporte html/xml mínimo).
+
+--------------------------------------------------
+Checkstyle (CONFIGURACIÓN OBLIGATORIA)
+--------------------------------------------------
+- Usa encoding explícito UTF-8 en la configuración de Checkstyle.
+- Aplica una configuración “media” adecuada para proyectos BIAN:
+    • Reglas de naming
+    • Reglas de imports
+    • Whitespace y llaves
+    • Longitud de línea razonable (ej. 120)
+    • Complejidad razonable
+    • Buenas prácticas básicas
+  (NO uses reglas extremas ni demasiado restrictivas que frenen el desarrollo).
+
+- Debes crear y usar estos archivos obligatorios:
+    • config/checkstyle/checkstyle.xml
+    • config/checkstyle/suppressions.xml
+
+- En build.gradle debes referenciarlos así:
+    • configFile = file("$rootDir/config/checkstyle/checkstyle.xml")
+    • configProperties = ['checkstyle.suppressions.file': "$rootDir/config/checkstyle/suppressions.xml"]
+
+⚠️ IMPORTANTE - Configuración de Checkstyle:
+- El módulo `LineLength` DEBE estar FUERA de `TreeWalker`, no dentro.
+- Si `LineLength` está dentro de `TreeWalker`, Checkstyle lanzará el error: "TreeWalker is not allowed as a parent of LineLength".
+- Estructura correcta en checkstyle.xml:
+  ```xml
+  <module name="Checker">
+      <module name="LineLength">  <!-- Fuera de TreeWalker -->
+          <property name="max" value="120"/>
+      </module>
+      <module name="TreeWalker">
+          <!-- Otros módulos aquí -->
+      </module>
+  </module>
+  ```
+
+⚠️ CRÍTICO - Orden de Imports en Checkstyle:
+- El orden de imports DEBE ser exactamente: java.* → jakarta.* → org.* → com.*
+- Entre cada grupo debe haber UNA línea en blanco.
+- Los static imports van DENTRO del grupo org.*, después de los imports normales de org.* pero ANTES de com.*
+- Ejemplo CORRECTO:
+  ```java
+  package com.example;
+  
+  import java.math.BigDecimal;        // Grupo 1: java.*
+  import java.time.LocalDate;
+  
+  import jakarta.validation.Valid;    // Grupo 2: jakarta.*
+  
+  import org.springframework.web.bind.annotation.RestController;  // Grupo 3: org.* (normal)
+  import static org.assertj.core.api.Assertions.assertThat;       // Grupo 3: org.* (static)
+  import static org.mockito.Mockito.verify;                        // Grupo 3: org.* (static)
+  
+  import com.example.model.PaymentOrder;  // Grupo 4: com.*
+  
+  import lombok.RequiredArgsConstructor;   // Lombok debe estar separado, generalmente después de com.*
+  ```
+- Ejemplo INCORRECTO (causará error):
+  ```java
+  import jakarta.validation.Valid;
+  import org.springframework.web.bind.annotation.RestController;  // ❌ Falta línea en blanco
+  ```
+- Los static imports de lombok (si los hay) deben ir en el mismo grupo que otros static imports de org.*
+
+- ANTES de ejecutar el build completo, ejecuta:
+    ./gradlew checkstyleMain --no-daemon
+
+  IMPORTANTE (manejo de errores):
+  • NO uses tail, grep ni recortes de salida (NO uses "| tail -3" ni "| tail -10").
+  • Muestra el log COMPLETO del comando. Si es muy largo, muestra TODO y luego haz un resumen manual con:
+      - Tipo de error (ImportOrder, LineLength, etc.)
+      - Archivo y línea afectados
+      - Mensaje completo del error
+      - "Caused by" si existe
+  • Si aparece un error en Checkstyle:
+      → Lee exactamente el mensaje del log (incluyendo "Caused by:", módulo afectado, archivo y línea).
+      → Errores comunes y soluciones:
+        * "Orden incorrecto para el import": Reordenar imports según grupos (java.* → jakarta.* → org.* → com.*)
+        * "Separación extra en el grupo": Eliminar líneas en blanco innecesarias dentro de un grupo
+        * "debería separarse de los import previos": Agregar línea en blanco entre grupos (ej: entre jakarta.* y lombok)
+      → Identifica la causa real (ruta incorrecta, error DTD, módulo mal definido, regla inválida, propiedad inexistente, orden de imports, etc.).
+      → Corrige la configuración modificando SOLO los archivos necesarios:
+            - build.gradle
+            - config/checkstyle/checkstyle.xml
+            - config/checkstyle/suppressions.xml
+            - Archivos Java afectados (para errores de ImportOrder)
+      → Vuelve a ejecutar:
+            ./gradlew checkstyleMain --no-daemon
+        y luego:
+            ./gradlew checkstyleTest --no-daemon
+        hasta que ambos pasen sin errores.
+  • Nunca elimines el plugin de Checkstyle ni ignores los errores: siempre corrige la configuración según el log completo.
+
+--------------------------------------------------
+⚠️ IMPORTANTE - SpotBugs
+--------------------------------------------------
+- SpotBugs: NO configures `effort` y `reportLevel` en el bloque `spotbugs {}` directamente como strings.
+  Estos deben configurarse en las tareas individuales usando:
+    - com.github.spotbugs.snom.Effort.valueOf('MAX')
+    - com.github.spotbugs.snom.Confidence.valueOf('HIGH')
+- La configuración detallada de SpotBugs está en el PASO 14 del archivo super_prompt.txt, pero en este paso solo deja el plugin declarado sin romper el build.
+
+Al final de este paso, el proyecto debe:
+- Compilar correctamente.
+- Tener Checkstyle configurado y ejecutándose sin errores con `./gradlew checkstyleMain --no-daemon`.
+
+Asegúrate de que ./gradlew clean build compila correctamente.
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y lo que generó la IA
+- ai/decisions.md: Documenta cualquier corrección manual aplicada (ej: configuración de SpotBugs)
+
+
+PASO 1 – Carpeta de evidencias de IA
+------------------------------------
+Crea en la raíz del proyecto (junto a build.gradle):
+
+- ai/prompts.md      → lista de prompts usados (incluye los que uses con Cursor).
+- ai/decisions.md    → decisiones de diseño, correcciones manuales, trade-offs.
+- ai/generations/    → fragmentos relevantes generados por IA (por ejemplo openapi.yaml, controladores, etc.).
+
+Inicializa los .md con títulos y una pequeña descripción de cómo se documentará el uso de IA.
+
+
+PASO 2 – Analizar el WSDL y los XML legacy
+------------------------------------------
+Usa PaymentOrderService.wsdl, SubmitPaymentOrder*.xml y GetPaymentOrderStatus*.xml como entrada.
+
+Prompt sugerido para Cursor:
+
+Analiza el archivo PaymentOrderService.wsdl y los XML de ejemplo (SubmitPaymentOrderRequest/Response, GetPaymentOrderStatusRequest/Response) y dame:
+
+1) Operaciones SOAP disponibles relacionadas con órdenes de pago.
+2) Estructuras de datos principales (campos clave) de la orden de pago.
+3) Estados posibles de la orden de pago en el servicio legacy.
+4) Un mapeo de estos conceptos al Service Domain BIAN Payment Initiation y al BQ PaymentOrder.
+
+
+Resume y copia el resultado en ai/decisions.md.
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y el análisis generado
+- ai/decisions.md: Guarda el resultado completo del análisis del WSDL y mapeo a BIAN
+- ai/generations/: Opcionalmente guarda el WSDL analizado si es relevante
+
+
+PASO 3 – Diseñar el contrato OpenAPI 3.0 (contract-first, alineado con Postman)
+-------------------------------------------------------------------------------
+Prompt para Cursor:
+
+Basándote en el análisis del WSDL y la colección postman_collection.json (endpoints):
+
+- POST http://localhost:8080/payment-initiation/payment-orders
+- GET  http://localhost:8080/payment-initiation/payment-orders/{id}
+- GET  http://localhost:8080/payment-initiation/payment-orders/{id}/status
+
+Genera un archivo openapi/openapi.yaml con OpenAPI 3.0 que defina:
+
+- servers:
+  - url: http://localhost:8080
+- paths:
+  - POST /payment-initiation/payment-orders
+    - operationId: initiatePaymentOrder
+    - requestBody con esquema InitiatePaymentOrderRequest con campos alineados a la colección Postman:
+      - externalReference
+      - debtorAccount { iban }
+      - creditorAccount { iban }
+      - instructedAmount { amount, currency }
+      - remittanceInformation
+      - requestedExecutionDate (date)
+    - responses:
+      - 201: InitiatePaymentOrderResponse
+      - 400, 500 en formato application/problem+json
+  - GET /payment-initiation/payment-orders/{id}
+    - operationId: retrievePaymentOrder
+    - 200: RetrievePaymentOrderResponse
+    - 404: ProblemDetail
+  - GET /payment-initiation/payment-orders/{id}/status
+    - operationId: retrievePaymentOrderStatus
+    - 200: PaymentOrderStatusResponse
+    - 404: ProblemDetail
+
+Define schemas:
+
+- InitiatePaymentOrderRequest
+- InitiatePaymentOrderResponse
+- RetrievePaymentOrderResponse
+- PaymentOrderStatusResponse
+- PaymentAmount (value/currency)
+- ProblemDetail (RFC 7807)
+
+⚠️ IMPORTANTE - Validaciones en OpenAPI:
+- NO uses `pattern` y `enum` juntos en el mismo campo. Si un campo tiene `enum`, OpenAPI Generator creará un Java enum, y `@Pattern` no puede aplicarse a enums.
+- Ejemplo INCORRECTO (causará error de validación):
+  ```yaml
+  currency:
+    type: string
+    enum: [USD, EUR, GBP]
+    pattern: '^[A-Z]{3}$'  # ❌ NO usar pattern con enum
+  ```
+- Ejemplo CORRECTO:
+  ```yaml
+  currency:
+    type: string
+    enum: [USD, EUR, GBP]  # ✅ Solo enum, sin pattern
+  ```
+- Para campos de texto con validación de longitud (ej: IBAN), usa `minLength` y `maxLength`:
+  ```yaml
+  iban:
+    type: string
+    minLength: 15
+    maxLength: 34
+  ```
+  ⚠️ NOTA: Si defines `minLength: 15` para IBANs, asegúrate de que TODOS los ejemplos en tests, 
+  Postman collection y documentación usen IBANs de al menos 15 caracteres. Ejemplo: `"EC123456789012345678"`.
+
+Implementa el contenido completo de openapi/openapi.yaml.
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y el contrato OpenAPI generado
+- ai/decisions.md: Documenta decisiones de diseño del contrato (endpoints, schemas, validaciones)
+- ai/generations/: Guarda una copia del openapi.yaml inicial generado por IA con comentarios sobre qué se mantuvo y qué se modificó
+
+
+PASO 4 – Configurar OpenAPI Generator en Gradle
+-----------------------------------------------
+Prompt:
+
+En build.gradle, configura la tarea openApiGenerate:
+
+- generatorName = 'spring'
+- inputSpec   = "$rootDir/openapi/openapi.yaml"
+- outputDir   = "$buildDir/generated"
+- apiPackage  = 'com.bank.paymentinitiation.generated.api'
+- modelPackage = 'com.bank.paymentinitiation.generated.model'
+- invokerPackage = 'com.bank.paymentinitiation.generated.invoker'
+- configOptions:
+  - interfaceOnly = 'true'
+  - useSpringBoot3 = 'true'
+  - useTags = 'true'
+  - dateLibrary = 'java8'
+  - serializationLibrary = 'jackson'
+  - hideGenerationTimestamp = 'true'
+
+Añade la carpeta generada como source set:
+
+- sourceSets.main.java.srcDir("$buildDir/generated/src/main/java")
+
+Y haz que compileJava dependa de openApiGenerate.
+
+⚠️ IMPORTANTE - Dependencias necesarias para código generado:
+Agrega estas dependencias adicionales que requiere el código generado por OpenAPI:
+
+- implementation "io.swagger.core.v3:swagger-annotations:2.2.21"
+- implementation "org.openapitools:jackson-databind-nullable:0.2.6"
+- implementation "jakarta.validation:jakarta.validation-api:3.0.2"
+- implementation "jakarta.annotation:jakarta.annotation-api:2.1.1"
+
+Comprueba que ./gradlew openApiGenerate && ./gradlew compileJava funciona sin errores.
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y la configuración de OpenAPI Generator generada
+- ai/decisions.md: Documenta las dependencias adicionales agregadas y por qué fueron necesarias
+
+
+PASO 5 – Estructura de paquetes (Hexagonal)
+-------------------------------------------
+Prompt:
+
+Crea la siguiente estructura de paquetes bajo com.bank.paymentinitiation:
+
+- domain
+  - model
+  - port.in
+  - port.out
+  - exception
+  - service
+- application
+  - service
+  - mapper (opcional)
+- adapter.in.rest
+  - dto (los modelos generados van en generated.model, aquí solo wrappers si los necesitas)
+  - mapper
+- adapter.out.persistence
+  - entity
+  - jpa
+  - mapper
+  - PaymentOrderRepositoryAdapter
+- config
+
+Crea clases vacías (o interfaces) con javadoc describiendo su rol, sin meter aún mucha lógica.
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y la estructura de paquetes generada
+- ai/decisions.md: Documenta la decisión de usar arquitectura hexagonal y la organización de paquetes
+
+
+PASO 6 – Modelo de dominio BIAN (PaymentOrder)
+----------------------------------------------
+Prompt:
+
+En com.bank.paymentinitiation.domain.model crea:
+
+- Enum PaymentStatus con valores: INITIATED, PENDING, PROCESSED, COMPLETED, FAILED, CANCELLED.
+- Value object PaymentAmount (BigDecimal value, String currency) con factoría estática que valide que value > 0.
+- Value objects PayerReference, PayeeReference, ExternalReference (strings no vacíos).
+- Aggregate root PaymentOrder con campos:
+  - String paymentOrderReference
+  - ExternalReference externalReference
+  - PayerReference payerReference
+  - PayeeReference payeeReference
+  - PaymentAmount instructedAmount
+  - String remittanceInformation
+  - LocalDate requestedExecutionDate
+  - PaymentStatus status
+  - LocalDateTime createdAt
+  - LocalDateTime updatedAt
+
+Incluye métodos de dominio para:
+- validar el agregado (validate())
+- iniciar la orden (marcar INITIATED)
+- cambiar estado respetando una secuencia razonable (por ejemplo INITIATED → PENDING → PROCESSED → COMPLETED).
+
+⚠️ IMPORTANTE - Orden de validación en servicios de aplicación:
+- El método `validate()` del agregado PaymentOrder requiere que `status` y `createdAt` sean no-null.
+- Estos campos se establecen cuando se llama a `initiate()`.
+- Por lo tanto, en los servicios de aplicación (ej: InitiatePaymentOrderService), el orden CORRECTO es:
+  1. Generar `paymentOrderReference` (si no existe).
+  2. Llamar a `order.initiate()` para establecer `status = INITIATED` y `createdAt = LocalDateTime.now()`.
+  3. Llamar a `paymentOrderDomainService.validate(initiatedOrder)` y `initiatedOrder.validate()`.
+  4. Guardar en el repositorio.
+- NO llames a `validate()` antes de `initiate()`, ya que fallará con NullPointerException.
+
+No uses anotaciones de Spring en el dominio. Usa Lombok (@Value/@Builder) cuando tenga sentido.
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y el modelo de dominio generado
+- ai/decisions.md: Documenta decisiones sobre value objects, estados del enum PaymentStatus, y métodos de dominio
+- ai/generations/: Opcionalmente guarda clases del dominio generadas inicialmente si hubo cambios significativos
+
+
+PASO 7 – Puertos de dominio (ports in/out) y servicios de aplicación
+--------------------------------------------------------------------
+Prompt:
+
+En domain.port.in crea interfaces:
+
+- InitiatePaymentOrderUseCase
+  - PaymentOrder initiate(PaymentOrder order);
+- RetrievePaymentOrderUseCase
+  - PaymentOrder retrieve(String paymentOrderReference);
+- RetrievePaymentOrderStatusUseCase
+  - PaymentStatus retrieveStatus(String paymentOrderReference);
+
+En domain.port.out crea:
+
+- PaymentOrderRepository
+  - PaymentOrder save(PaymentOrder order);
+  - Optional<PaymentOrder> findByReference(String paymentOrderReference);
+
+En application.service crea implementaciones de estos casos de uso que:
+- Inyectan PaymentOrderRepository (port out).
+- Aplican reglas de negocio básicas y delegan en el repositorio.
+- Lanzan excepciones de dominio (PaymentOrderNotFoundException, InvalidPaymentException) cuando aplique.
+
+⚠️ IMPORTANTE - Orden de operaciones en InitiatePaymentOrderService:
+- El método `initiate()` del servicio DEBE seguir este orden:
+  1. Generar `paymentOrderReference` si no existe (usando `PaymentOrderDomainService.generateReference()`).
+  2. Llamar a `order.initiate()` para establecer `status = INITIATED` y `createdAt = LocalDateTime.now()`.
+  3. Llamar a `paymentOrderDomainService.validate(initiatedOrder)` y `initiatedOrder.validate()`.
+  4. Guardar en el repositorio usando `repository.save(initiatedOrder)`.
+- NO llames a `validate()` antes de `initiate()`, ya que `validate()` requiere que `status` y `createdAt` sean no-null.
+- Ejemplo de implementación correcta:
+  ```java
+  public PaymentOrder initiate(PaymentOrder order) {
+      if (order.getPaymentOrderReference() == null || order.getPaymentOrderReference().isBlank()) {
+          String reference = paymentOrderDomainService.generateReference();
+          order = order.toBuilder().paymentOrderReference(reference).build();
+      }
+      PaymentOrder initiatedOrder = order.initiate();  // Establece status y createdAt
+      paymentOrderDomainService.validate(initiatedOrder);  // Valida después de initiate
+      initiatedOrder.validate();  // Valida invariantes del agregado
+      return repository.save(initiatedOrder);
+  }
+  ```
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y los puertos/servicios generados
+- ai/decisions.md: Documenta decisiones sobre la separación de puertos in/out y la implementación de servicios de aplicación
+
+
+PASO 8 – H2 + JPA (entidad, repositorio y adaptador de persistencia)
+--------------------------------------------------------------------
+⚠️ CRÍTICO - Este paso es OBLIGATORIO y debe completarse completamente antes de continuar al PASO 9.
+Sin la persistencia implementada, los tests de integración y los endpoints REST no funcionarán.
+
+Prompt:
+
+1. Configura application.yml para H2 en memoria:
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:paymentdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when_authorized
+
+2. En adapter.out.persistence.entity crea PaymentOrderEntity con:
+   - @Entity y @Table(name = "payment_orders")
+   - UUID id (clave primaria técnica, @Id, @GeneratedValue)
+   - String paymentOrderReference (identificador de negocio único, @Column(unique = true, nullable = false))
+   - String externalReference (mapeado desde domain.ExternalReference.getValue())
+   - String payerReference (mapeado desde domain.PayerReference.getValue())
+   - String payeeReference (mapeado desde domain.PayeeReference.getValue())
+   - BigDecimal amount (mapeado desde domain.PaymentAmount.getValue())
+   - String currency (mapeado desde domain.PaymentAmount.getCurrency())
+   - String remittanceInformation
+   - LocalDate requestedExecutionDate
+   - String status (mapeado desde domain.PaymentStatus.name(), enum como String)
+   - LocalDateTime createdAt
+   - LocalDateTime updatedAt
+   - @Column con anotaciones apropiadas (@Column(nullable = false) donde aplique)
+   - Constructor sin argumentos (requerido por JPA)
+   - Constructor con todos los campos o builder (opcional, para facilitar creación en tests)
+
+3. En adapter.out.persistence.jpa crea PaymentOrderJpaRepository:
+   - Interface que extiende JpaRepository<PaymentOrderEntity, UUID>
+   - Método: Optional<PaymentOrderEntity> findByPaymentOrderReference(String paymentOrderReference);
+   - ⚠️ IMPORTANTE: El método debe buscar por paymentOrderReference, NO por id (UUID).
+     Usa @Query si es necesario: @Query("SELECT e FROM PaymentOrderEntity e WHERE e.paymentOrderReference = :reference")
+
+4. Completa PaymentOrderPersistenceMapper en adapter.out.persistence.mapper:
+   - Descomenta y completa los métodos toEntity() y toDomain()
+   - Usa @Mapping con expresiones para mapear value objects:
+     - domain.ExternalReference.getValue() → entity.externalReference
+     - domain.PayerReference.getValue() → entity.payerReference
+     - domain.PayeeReference.getValue() → entity.payeeReference
+     - domain.PaymentAmount.getValue() → entity.amount
+     - domain.PaymentAmount.getCurrency() → entity.currency
+     - domain.PaymentStatus.name() → entity.status (String)
+   - Para toDomain(), crea value objects usando sus constructores:
+     - new ExternalReference(entity.getExternalReference())
+     - new PayerReference(entity.getPayerReference())
+     - new PayeeReference(entity.getPayeeReference())
+     - PaymentAmount.of(entity.getAmount(), entity.getCurrency())
+     - PaymentStatus.valueOf(entity.getStatus())
+   - Mapea paymentOrderReference ↔ id (el id técnico UUID se usa como clave primaria, pero paymentOrderReference es el identificador de negocio)
+
+5. Completa PaymentOrderRepositoryAdapter en adapter.out.persistence:
+   - Inyecta PaymentOrderJpaRepository y PaymentOrderPersistenceMapper vía constructor
+   - Implementa save():
+     - ⚠️ CRÍTICO: Verifica si la entidad ya existe buscando por paymentOrderReference (NO por id UUID).
+     - Si existe: mapea PaymentOrder → PaymentOrderEntity, PRESERVA el ID existente de la base de datos, y actualiza.
+     - Si no existe: mapea PaymentOrder → PaymentOrderEntity (el mapper generará un nuevo UUID para id).
+     - Guarda la entidad usando jpaRepository.save(entity) (insert o update según corresponda).
+     - Mapea PaymentOrderEntity guardada → PaymentOrder usando mapper.toDomain(savedEntity)
+     - Retorna PaymentOrder
+   - Implementa findByReference():
+     - Busca entidad usando jpaRepository.findByPaymentOrderReference(paymentOrderReference)
+     - Si existe, mapea PaymentOrderEntity → PaymentOrder usando mapper.toDomain(entity)
+     - Retorna Optional.of(mappedOrder) o Optional.empty()
+   - ⚠️ IMPORTANTE: Elimina los TODOs y las excepciones UnsupportedOperationException.
+     Este adaptador DEBE estar completamente implementado para que los endpoints REST funcionen.
+   - Ejemplo de implementación completa de save() con preservación de ID:
+     ```java
+     @Override
+     public PaymentOrder save(final PaymentOrder order) {
+         // Verificar si la entidad ya existe por paymentOrderReference
+         Optional<PaymentOrderEntity> existingEntity = jpaRepository
+             .findByPaymentOrderReference(order.getPaymentOrderReference());
+         
+         PaymentOrderEntity entity;
+         if (existingEntity.isPresent()) {
+             // Actualizar entidad existente: preservar ID y actualizar todos los demás campos
+             PaymentOrderEntity existing = existingEntity.get();
+             entity = mapper.toEntity(order);
+             entity.setId(existing.getId()); // Preservar el ID existente
+         } else {
+             // Crear nueva entidad
+             entity = mapper.toEntity(order);
+         }
+         
+         // Guardar entidad (insert o update)
+         PaymentOrderEntity savedEntity = jpaRepository.save(entity);
+         
+         // Mapear de vuelta a dominio y retornar
+         return mapper.toDomain(savedEntity);
+     }
+     ```
+
+⚠️ VERIFICACIÓN OBLIGATORIA:
+Después de completar este paso, ejecuta:
+- ./gradlew compileJava --no-daemon (debe compilar sin errores)
+- ./gradlew test --no-daemon (los tests unitarios deben pasar)
+- Verifica que PaymentOrderRepositoryAdapter.save() y findByReference() estén implementados (no deben lanzar UnsupportedOperationException)
+- Verifica que PaymentOrderPersistenceMapper tenga los métodos toEntity() y toDomain() implementados (no comentados)
+- Verifica que PaymentOrderEntity tenga todos los campos necesarios y anotaciones JPA correctas
+- Verifica que PaymentOrderJpaRepository tenga el método findByPaymentOrderReference() implementado
+
+⚠️ CRÍTICO - NO continúes al PASO 9 hasta que:
+- PaymentOrderEntity esté creada y compilando
+- PaymentOrderJpaRepository esté creada y compilando
+- PaymentOrderPersistenceMapper esté completamente implementado (métodos descomentados y funcionando)
+- PaymentOrderRepositoryAdapter esté completamente implementado (save() y findByReference() funcionando, sin UnsupportedOperationException)
+- Todos los tests unitarios pasen
+- El proyecto compile sin errores
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y la configuración de H2/JPA generada
+- ai/decisions.md: Documenta decisiones sobre la estructura de la entidad JPA, uso de UUID vs paymentOrderReference, mapeo de value objects, y configuración de H2
+
+
+PASO 9 – MapStruct para mapeos (REST ↔ Dominio ↔ Entidad)
+----------------------------------------------------------
+Prompt:
+
+Configura MapStruct usando:
+
+- implementation "org.mapstruct:mapstruct:1.5.5.Final"
+- annotationProcessor "org.mapstruct:mapstruct-processor:1.5.5.Final"
+
+Crea en adapter.in.rest.mapper:
+
+- PaymentOrderRestMapper con métodos:
+  - PaymentOrder toDomain(InitiatePaymentOrderRequest request);
+  - InitiatePaymentOrderResponse toInitiateResponse(PaymentOrder domain);
+  - RetrievePaymentOrderResponse toRetrieveResponse(PaymentOrder domain);
+  - PaymentOrderStatusResponse toStatusResponse(PaymentOrder domain);
+
+Crea en adapter.out.persistence.mapper:
+
+- PaymentOrderPersistenceMapper con métodos:
+  - PaymentOrderEntity toEntity(PaymentOrder domain);
+  - PaymentOrder toDomain(PaymentOrderEntity entity);
+
+⚠️ IMPORTANTE - Completar mapper de persistencia:
+- Si PaymentOrderPersistenceMapper ya existe pero está comentado (del PASO 8), descomenta y completa los métodos.
+- Si no existe, créalo con los métodos completos usando @Mapping con expresiones para value objects.
+- Usa @Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR).
+- ⚠️ CRÍTICO: Este mapper DEBE estar completamente implementado para que PaymentOrderRepositoryAdapter funcione.
+- ⚠️ NOTA: Si ya completaste el PASO 8 completamente, este mapper ya debería estar implementado. 
+  Solo verifica que esté funcionando correctamente y que los métodos no estén comentados.
+- ⚠️ NOTA: Si ya completaste el PASO 8 completamente, este mapper ya debería estar implementado. 
+  Solo verifica que esté funcionando correctamente y que los métodos no estén comentados.
+
+⚠️ IMPORTANTE - Evitar ambigüedades de tipos:
+- En los mappers MapStruct, usa nombres completamente calificados (fully qualified names) para tipos 
+  que tienen el mismo nombre en diferentes paquetes (ej: PaymentAmount, PaymentStatus en dominio vs generated.model).
+- Ejemplo: usa `com.bank.paymentinitiation.domain.model.PaymentAmount` en lugar de solo `PaymentAmount` 
+  cuando hay ambigüedad entre dominio y DTOs generados.
+- Para métodos `toDomain(InitiatePaymentOrderRequest request, String paymentOrderReference)`, 
+  el mapper debe recibir el `paymentOrderReference` como parámetro adicional porque se genera 
+  en el controlador, no en el mapper.
+
+⚠️ Conversión de timestamps:
+- Agrega métodos @Named para convertir LocalDateTime → OffsetDateTime en mappers REST, 
+  ya que los DTOs de OpenAPI usan OffsetDateTime pero el dominio usa LocalDateTime.
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y los mappers MapStruct generados
+- ai/decisions.md: Documenta las correcciones manuales aplicadas (ambigüedades de tipos, conversiones de timestamps, métodos custom)
+- ai/generations/: Opcionalmente guarda mappers generados inicialmente si hubo cambios significativos
+
+
+PASO 10 – Adaptador REST (implementando interfaces generadas)
+-------------------------------------------------------------
+Prompt:
+
+Usando las interfaces generadas en com.bank.paymentinitiation.generated.api, crea PaymentOrdersController en adapter.in.rest que:
+
+- Implemente PaymentOrdersApi (el nombre generado por OpenAPI).
+- Inyecte los use cases, PaymentOrderRestMapper y PaymentOrderReferenceGenerator.
+- Para POST /payment-initiation/payment-orders:
+  - Reciba InitiatePaymentOrderRequest con @Valid.
+  - Genere paymentOrderReference usando PaymentOrderReferenceGenerator.
+  - Mapee DTO → dominio usando `mapper.toDomain(request, paymentOrderReference)`.
+  - Llame InitiatePaymentOrderUseCase, mapee dominio → InitiatePaymentOrderResponse.
+  - Devuelva ResponseEntity.status(HttpStatus.CREATED).body(response).
+- Para GET /payment-initiation/payment-orders/{id}:
+  - Llame RetrievePaymentOrderUseCase, mapee dominio → RetrievePaymentOrderResponse.
+  - Devuelva ResponseEntity.ok(response).
+- Para GET /payment-initiation/payment-orders/{id}/status:
+  - Llame RetrievePaymentOrderUseCase (necesita orden completa para mapear a response con paymentOrderReference y lastUpdated).
+  - Mapee dominio → PaymentOrderStatusResponse usando mapper.toStatusResponse().
+  - Devuelva ResponseEntity.ok(response).
+  - ⚠️ NOTA: Aunque existe RetrievePaymentOrderStatusUseCase que retorna solo PaymentStatus, 
+    el controlador usa RetrievePaymentOrderUseCase porque necesita la orden completa para 
+    incluir paymentOrderReference y lastUpdated en la respuesta.
+
+⚠️ IMPORTANTE - Servicios y componentes necesarios:
+
+1. Crea PaymentOrderReferenceGenerator en application.service:
+   - Componente Spring (@Component) que genera referencias únicas en formato "PO-{número}".
+   - ⚠️ CRÍTICO: El formato DEBE cumplir con el patrón del OpenAPI: `^PO-[0-9]+$` (solo números después de "PO-").
+     El OpenAPI define `pattern: '^PO-[0-9]+$'` para el parámetro `paymentOrderId`, por lo que NO se pueden usar letras.
+   - ⚠️ CRÍTICO: NO uses UUIDs con letras, ya que no cumplirán el patrón `^PO-[0-9]+$` y causarán errores de validación.
+   - Genera un identificador numérico único usando timestamp + número aleatorio.
+   - Ejemplo de implementación CORRECTA:
+     ```java
+     @Component
+     public class PaymentOrderReferenceGenerator {
+         public String generate() {
+             // Genera un identificador numérico usando timestamp (últimos 10 dígitos) + aleatorio (6 dígitos)
+             // Esto asegura unicidad mientras cumple el patrón ^PO-[0-9]+$
+             long timestamp = System.currentTimeMillis();
+             long random = (long) (Math.random() * 1000000); // 6 dígitos
+             String numericId = String.format("%010d%06d", timestamp % 10000000000L, random);
+             return "PO-" + numericId;
+         }
+     }
+     ```
+   - Ejemplo de referencia generada: "PO-1234567890123456" (16 dígitos numéricos).
+   - ⚠️ NOTA: Este formato es obligatorio para cumplir con la validación del OpenAPI y evitar errores de ConstraintViolationException.
+
+2. Crea ApplicationConfig en config/:
+   - Clase de configuración Spring con @Configuration.
+   - ⚠️ NOTA: Los servicios de aplicación (InitiatePaymentOrderService, RetrievePaymentOrderService, RetrievePaymentOrderStatusService) 
+     ya tienen @Service, por lo que Spring los detecta automáticamente. ApplicationConfig puede estar vacía o contener 
+     configuración adicional si es necesaria.
+
+3. ⚠️ CRÍTICO - Verifica y completa PaymentOrderRepositoryAdapter (si no se completó en PASO 8):
+   - Debe tener @Component para ser detectado por Spring.
+   - DEBE inyectar PaymentOrderJpaRepository y PaymentOrderPersistenceMapper vía constructor.
+   - Implementa COMPLETAMENTE los métodos save() y findByReference() usando PaymentOrderJpaRepository y PaymentOrderPersistenceMapper.
+   - ⚠️ CRÍTICO: Elimina TODOS los TODOs y excepciones UnsupportedOperationException.
+     Sin este adaptador implementado, los endpoints REST NO funcionarán y los tests de integración fallarán.
+   - Si el adaptador ya está implementado (del PASO 8), verifica que funcione correctamente.
+   - Ejemplo de implementación completa:
+     ```java
+     @Component
+     @RequiredArgsConstructor
+     public class PaymentOrderRepositoryAdapter implements PaymentOrderRepository {
+         private final PaymentOrderJpaRepository jpaRepository;
+         private final PaymentOrderPersistenceMapper mapper;
+         
+         @Override
+         public PaymentOrder save(PaymentOrder order) {
+             // Verificar si la entidad ya existe por paymentOrderReference
+             Optional<PaymentOrderEntity> existingEntity = jpaRepository
+                 .findByPaymentOrderReference(order.getPaymentOrderReference());
+             
+             PaymentOrderEntity entity;
+             if (existingEntity.isPresent()) {
+                 // Actualizar entidad existente: preservar ID y actualizar todos los demás campos
+                 PaymentOrderEntity existing = existingEntity.get();
+                 entity = mapper.toEntity(order);
+                 entity.setId(existing.getId()); // Preservar el ID existente
+             } else {
+                 // Crear nueva entidad
+                 entity = mapper.toEntity(order);
+             }
+             
+             // Guardar entidad (insert o update)
+             PaymentOrderEntity savedEntity = jpaRepository.save(entity);
+             
+             // Mapear de vuelta a dominio y retornar
+             return mapper.toDomain(savedEntity);
+         }
+         
+         @Override
+         public Optional<PaymentOrder> findByReference(String paymentOrderReference) {
+             return jpaRepository.findByPaymentOrderReference(paymentOrderReference)
+                 .map(mapper::toDomain);
+         }
+     }
+     ```
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y el controlador REST generado
+- ai/decisions.md: Documenta decisiones sobre PaymentOrderReferenceGenerator, ApplicationConfig, y la implementación del controlador
+- ai/generations/: Opcionalmente guarda el controlador generado inicialmente si hubo cambios significativos
+
+
+PASO 11 – Manejo global de errores (RFC 7807)
+---------------------------------------------
+Prompt:
+
+Crea en adapter.in.rest un @RestControllerAdvice GlobalExceptionHandler que maneje:
+
+- PaymentOrderNotFoundException → 404 NOT FOUND, body ProblemDetail con title "Payment Order Not Found".
+- InvalidPaymentException → 400 BAD REQUEST, body ProblemDetail con title "Invalid Payment Order".
+- MethodArgumentNotValidException → 400 BAD REQUEST, body ProblemDetail con title "Bad Request" y detail que describe los errores de validación (campos faltantes, valores inválidos, etc.).
+  - Esta excepción se lanza cuando `@Valid` falla en los parámetros del controlador.
+- HttpMessageNotReadableException → 400 BAD REQUEST, body ProblemDetail con title "Bad Request" y detail que describe el error (JSON malformado, formato de fecha inválido, etc.).
+  - Esta excepción se lanza cuando el JSON del request body no puede ser parseado (ej: fecha en formato incorrecto, JSON sintácticamente inválido).
+- Exception genérica → 500 INTERNAL SERVER ERROR.
+
+⚠️ IMPORTANTE - Handlers adicionales:
+- Los handlers para `MethodArgumentNotValidException` y `HttpMessageNotReadableException` son OBLIGATORIOS 
+  para que los tests de integración pasen correctamente cuando se envían requests inválidos.
+- Sin estos handlers, Spring Boot retornará 500 INTERNAL SERVER ERROR en lugar de 400 BAD REQUEST para errores de validación.
+
+Usa org.springframework.http.ProblemDetail (Spring 6+). Todos los errores deben tener content-type application/problem+json.
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y el GlobalExceptionHandler generado
+- ai/decisions.md: Documenta decisiones sobre el manejo de errores RFC 7807 y el mapeo de excepciones de dominio a HTTP
+
+
+PASO 12 – Tests unitarios (dominio, casos de uso, mappers)
+----------------------------------------------------------
+Prompt:
+Crea tests unitarios siguiendo buenas prácticas de testing para el microservicio Payment Initiation.
+
+⚠️ MUY IMPORTANTE – REGLA OBLIGATORIA PARA LEER LOGS
+Cuando ejecutes comandos como:
+
+    ./gradlew test --no-daemon
+    ./gradlew build --no-daemon
+    ./gradlew checkstyleMain --no-daemon
+    ./gradlew check --no-daemon
+
+NO uses grep, tail ni ningún filtro como:
+
+    | grep "FAILED"
+    | grep -A 10
+    | tail -3
+    | tail -10
+
+Estos comandos OCULTAN el log real y te impiden corregir los errores correctamente.
+
+En su lugar:
+
+1. Muestra el log COMPLETO del error.
+2. Si el log es muy largo, NO lo recortes. En vez de eso, muéstralo completo y luego provee un RESUMEN manual con:
+   • La excepción principal (tipo y mensaje)
+   • “Caused by”
+   • El archivo involucrado
+   • La línea específica
+   • El módulo afectado (JUnit, Checkstyle, SpotBugs, Jacoco)
+3. Usa esa información para:
+   • Identificar el error real
+   • Explicar la causa raíz
+   • Proponer y aplicar la corrección adecuada
+   • Ejecutar el comando nuevamente hasta que pase sin errores
+
+Nunca adivines soluciones sin ver el log completo. La depuración SIEMPRE debe ser basada en el error exacto que muestra Gradle.
+
+
+-------------------------------------------------------------------
+1) TESTS DEL AGREGADO PaymentOrder (domain.model.PaymentOrderTest)
+-------------------------------------------------------------------
+
+Cubre al menos estos escenarios:
+
+- Validaciones de creación:
+  - Creación exitosa con campos válidos.
+  - Falla si:
+    • paymentOrderReference es null/blank
+    • externalReference es null
+    • payerReference es null
+    • payeeReference es null
+    • instructedAmount es null o amount <= 0
+    • requestedExecutionDate es null
+    • createdAt null cuando es requerido
+    • status null cuando sea requerido
+
+- Reglas de negocio / transiciones de estado:
+  • INITIATED → PENDING / CANCELLED
+  • PENDING → PROCESSED / FAILED / CANCELLED
+  • PROCESSED → COMPLETED / FAILED
+  • Transiciones inválidas deben lanzar IllegalStateException
+  • Estados finales (COMPLETED, FAILED, CANCELLED) no permiten más cambios
+  • updatedAt debe cambiar en cada transición válida
+
+- Buenas prácticas:
+  • Usa AAA (Arrange – Act – Assert)
+  • Usa AssertJ: assertThat(), assertThatThrownBy(), etc.
+  • Usa @DisplayName con descripciones claras
+  • Usa builders/helpers para evitar repetir datos
+
+
+-------------------------------------------------------------------
+2) TESTS DE SERVICIOS DE APLICACIÓN
+-------------------------------------------------------------------
+
+Clases sugeridas:
+- InitiatePaymentOrderServiceTest
+- RetrievePaymentOrderServiceTest
+- RetrievePaymentOrderStatusServiceTest
+
+Configuración:
+- @ExtendWith(MockitoExtension.class)
+- @Mock PaymentOrderRepository
+- @InjectMocks servicio bajo test
+
+Casos mínimos:
+
+a) InitiatePaymentOrderServiceTest
+- shouldInitiatePaymentOrderSuccessfully()
+- shouldThrowExceptionWhenValidationFails()
+- shouldUseExistingPaymentOrderReference()
+- shouldNotSaveWhenOrderInvalid()
+
+b) RetrievePaymentOrderServiceTest
+- shouldRetrievePaymentOrderSuccessfully()
+- shouldThrowWhenOrderNotFound()
+- shouldThrowWhenReferenceIsNullOrBlank()
+
+c) RetrievePaymentOrderStatusServiceTest
+- Igual que retrieve, pero enfocado solo en status / lastUpdated.
+
+
+-------------------------------------------------------------------
+3) TESTS DE MAPPERS MAPSTRUCT (RECOMENDADO)
+-------------------------------------------------------------------
+
+Si existen mappers como PaymentOrderRestMapper o PaymentOrderPersistenceMapper, crear tests:
+
+- shouldMapRequestToDomain()
+- shouldMapDomainToInitiateResponse()
+- shouldMapDomainToRetrieveResponse()
+- shouldMapDomainToStatusResponse()
+
+- shouldMapDomainToEntity()
+- shouldMapEntityToDomain()
+- shouldMapAllStatuses()
+
+
+-------------------------------------------------------------------
+4) CONVENCIONES DE TESTS
+-------------------------------------------------------------------
+
+• Nombres estilo:
+  should[Behavior]When[Condition]()
+  shouldReturnXWhenY()
+
+• Usar @DisplayName con lenguaje natural
+
+• AssertJ obligatorio:
+  assertThat()
+  assertThatThrownBy()
+  assertThat(list).hasSize()
+
+• Mockito:
+  verify(repository).save(...)
+  verify(repository, never()).save(...)
+  when(findBy...).thenReturn(...)
+  doThrow(...).when(...)
+
+
+-------------------------------------------------------------------
+5) COBERTURA ESPERADA
+-------------------------------------------------------------------
+
+- Dominio (Aggregate, Value Objects): 85–95%
+- Servicios de Aplicación: 90–100%
+- Mappers: cubrir campos clave (IDs, referencias, monto, status)
+
+⚠️ IMPORTANTE - Tests adicionales necesarios para alcanzar 85% de cobertura global:
+Si después de crear los tests básicos la cobertura no alcanza el 85% requerido (verificado en PASO 14), 
+debes agregar tests adicionales para:
+
+- PaymentOrderDomainService: tests para el método validate() (validación exitosa, null check)
+- GlobalExceptionHandler: tests para todos los handlers de excepciones (404, 400, 500, validación, JSON malformado)
+- PaymentOrderReferenceGenerator: tests para verificar formato correcto, unicidad, y cumplimiento del patrón ^PO-[0-9]+$
+- PaymentOrderRepositoryAdapter: tests para save() (nuevo y actualización), findByReference() (existe y no existe)
+- Value Objects (ExternalReference, PayerReference, PayeeReference, PaymentAmount): tests para equals(), hashCode(), toString()
+- PaymentOrder.changeStatus(): tests para casos edge (null status, transiciones a FAILED desde diferentes estados, transiciones a CANCELLED desde PROCESSED, etc.)
+
+Estos tests adicionales son OBLIGATORIOS si la cobertura no alcanza 85% en el PASO 14.
+
+
+-------------------------------------------------------------------
+DOCUMENTACIÓN IA
+-------------------------------------------------------------------
+
+Después de completar este paso, documenta:
+
+- ai/prompts.md: registra este prompt y describe los tests creados.
+- ai/decisions.md: documenta decisiones sobre estrategia de testing, cobertura objetivo y casos críticos.
+
+PASO 13 – Tests de integración del microservicio Payment Initiation
+
+Configura y crea tests de integración usando Spring Boot Test + WebTestClient, asegurando que los endpoints REST funcionen de extremo a extremo con H2 real, el contrato OpenAPI y la colección Postman.
+
+⚠️ MUY IMPORTANTE – REGLA OBLIGATORIA PARA LEER LOGS (NO GREP / NO TAIL)
+Al ejecutar comandos como:
+
+    ./gradlew test --no-daemon
+    ./gradlew build --no-daemon
+    ./gradlew check --no-daemon
+
+NO uses grep, tail ni filtros como:
+    | grep "FAILED"
+    | grep -A 10
+    | tail -3
+    | tail -10
+
+Estos comandos OCULTAN información crítica del log, impiden encontrar fallos reales y hacen que no puedas corregir nada.
+
+En su lugar:
+1. Muestra SIEMPRE el log COMPLETO del error sin filtrar.
+2. Si es muy largo, muéstralo completo y después haz un resumen con:
+   • Excepción principal
+   • "Caused by"
+   • Archivo y línea afectados
+   • Componente que falló (JUnit, Jackson, Checkstyle, WebTestClient, etc.)
+3. Con esa información:
+   • Identifica la causa real
+   • Explica por qué ocurrió
+   • Corrige únicamente los archivos necesarios
+   • Re-ejecuta `./gradlew test` hasta que pase sin errores
+
+Nunca adivines soluciones sin ver el log completo.
+
+
+---------------------------------------------------------------
+CONFIGURACIÓN GENERAL DEL TEST DE INTEGRACIÓN
+---------------------------------------------------------------
+
+Crea la clase:
+
+    src/test/java/.../adapter/in/rest/PaymentInitiationIntegrationTest
+
+con el siguiente contenido base:
+
+```java
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureWebTestClient
+class PaymentInitiationIntegrationTest {
+
+    @Autowired
+    private WebTestClient webTestClient;
+
+    @Autowired
+    private PaymentOrderJpaRepository repository;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll(); // limpiar estado entre tests
+    }
+}
+```
+
+⚠️ CRÍTICO - Requisitos previos para tests de integración:
+- PaymentOrderEntity DEBE estar creada (PASO 8)
+- PaymentOrderJpaRepository DEBE estar creada (PASO 8)
+- PaymentOrderPersistenceMapper DEBE estar completamente implementado (PASO 8 o PASO 9)
+- PaymentOrderRepositoryAdapter DEBE estar completamente implementado (PASO 8 o PASO 10)
+- Sin estos componentes, los tests de integración fallarán con UnsupportedOperationException.
+
+Requisitos:
+	•	Usar H2 real (configuración de application.yml).
+	•	No usar mocks en tests de integración.
+	•	Validar la aplicación completa: controladores, mappers, servicios, repositorio, JPA, H2, validaciones y serialización JSON.
+	•	⚠️ IMPORTANTE: Los tests de integración requieren que la persistencia esté completamente implementada.
+	  Si los tests fallan con UnsupportedOperationException, vuelve al PASO 8 y completa la implementación.
+TESTS A IMPLEMENTAR
+
+1) POST /payment-initiation/payment-orders – Creación EXITOSA
+
+Enviar JSON basado en Postman:
+
+⚠️ IMPORTANTE - IBANs en tests:
+Los IBANs en los payloads DEBEN cumplir con `minLength: 15` definido en OpenAPI.
+Ejemplo CORRECTO (al menos 15 caracteres):
+{
+"externalReference": "EXT-1",
+"debtorAccount": { "iban": "EC123456789012345678" },
+"creditorAccount": { "iban": "EC987654321098765432" },
+"instructedAmount": { "amount": 150.75, "currency": "USD" },
+"remittanceInformation": "Factura 001-123",
+"requestedExecutionDate": "2025-10-31"
+}
+
+Verificaciones:
+	•	.expectStatus().isCreated()
+	•	jsonPath("$.paymentOrderId").exists() (⚠️ NOTA: El campo en la respuesta es "paymentOrderId", no "paymentOrderReference")
+	•	jsonPath("$.status").isEqualTo("ACCEPTED") (⚠️ NOTA: El estado en la respuesta es "ACCEPTED" según OpenAPI, que mapea a INITIATED en el dominio)
+	•	jsonPath("$.paymentOrderId").isNotEmpty()
+	•	⚠️ IMPORTANTE: La respuesta InitiatePaymentOrderResponse solo contiene paymentOrderId y status, 
+	  NO incluye debtorAccount, creditorAccount, instructedAmount ni createdAt. 
+	  Para verificar esos campos, usa el endpoint GET /payment-initiation/payment-orders/{id} después de crear la orden.
+
+2) GET /payment-initiation/payment-orders/{id} – Recuperación COMPLETA
+
+Flujo:
+	1.	Crear una orden via POST (capturar paymentOrderId del response)
+	2.	Usar ese ID (paymentOrderId) en el GET
+	⚠️ NOTA: El campo en la respuesta POST es "paymentOrderId", no "paymentOrderReference"
+
+Verificaciones:
+	•	.expectStatus().isOk()
+	•	jsonPath("$.paymentOrderId").isEqualTo(createdId) (⚠️ NOTA: El campo en la respuesta es "paymentOrderId")
+	•	jsonPath("$.externalReference").isEqualTo("EXT-1")
+	•	jsonPath("$.debtorAccount.iban").isEqualTo("EC123456789012345678")
+	•	jsonPath("$.creditorAccount.iban").isEqualTo("EC987654321098765432")
+	•	jsonPath("$.instructedAmount.amount").isEqualTo(150.75)
+	•	jsonPath("$.instructedAmount.currency").isEqualTo("USD")
+	•	jsonPath("$.remittanceInformation").isEqualTo("Factura 001-123")
+	•	jsonPath("$.requestedExecutionDate").isEqualTo("2025-10-31")
+	•	jsonPath("$.status").isEqualTo("ACCEPTED")
+	•	jsonPath("$.lastUpdate").exists() (⚠️ NOTA: El campo en la respuesta es "lastUpdate", no "lastUpdated" ni "createdAt")
+
+3) GET /payment-initiation/payment-orders/{id}/status – Solo estado
+
+Verificaciones:
+	•	.expectStatus().isOk()
+	•	jsonPath("$.paymentOrderId").isEqualTo(createdId) (⚠️ NOTA: El campo en la respuesta es "paymentOrderId")
+	•	jsonPath("$.status").isEqualTo("ACCEPTED") (⚠️ NOTA: El campo en la respuesta es "status", no "paymentOrderStatus")
+	•	jsonPath("$.lastUpdate").exists() (⚠️ NOTA: El campo en la respuesta es "lastUpdate", no "lastUpdated")
+
+4) Casos de ERROR (404, 400)
+
+a) GET con ID inexistente → 404
+	•	.expectStatus().isNotFound()
+	•	Validar ProblemDetail RFC 7807:
+• status = 404
+• title = "Payment Order Not Found"
+• detail contiene el ID
+	•	⚠️ IMPORTANTE: El ID usado en el test DEBE cumplir con el patrón `^PO-[0-9]+$` del OpenAPI.
+	  Ejemplo CORRECTO: `"PO-99999999999999999999999999999999"` (solo números)
+	  Ejemplo INCORRECTO: `"PO-NONEXISTENT"` (contiene letras, causará ConstraintViolationException)
+
+b) POST con body inválido → 400
+Ejemplos:
+	•	Falta debtorAccount
+	•	Falta instructedAmount
+	•	amount <= 0
+	•	currency inválida
+	•	fecha incorrecta
+
+Verificaciones:
+	•	.expectStatus().isBadRequest()
+	•	ProblemDetail:
+• status = 400
+• title = “Bad Request”
+• detail describe el error
+
+⸻
+
+MEJORES PRÁCTICAS OBLIGATORIAS CON WEBTESTCLIENT
+	•	Usar AAA (Arrange – Act – Assert)
+	•	Evitar .block()
+	•	Limpiar H2 en cada @BeforeEach
+	•	Para capturar el ID del POST:
+⚠️ IMPORTANTE - Captura de valores en WebTestClient:
+- NO uses `.value(String.class)` directamente, ya que no existe ese método en WebTestClient.
+- En su lugar, usa un Consumer o un array para capturar el valor:
+  ```java
+  String[] paymentOrderReference = new String[1];
+  webTestClient.post()
+      .uri("/payment-initiation/payment-orders")
+      .bodyValue(requestJson)
+      .exchange()
+      .expectStatus().isCreated()
+      .expectBody()
+      .jsonPath("$.paymentOrderId") (⚠️ NOTA: El campo en la respuesta es "paymentOrderId", no "paymentOrderReference")
+      .value(ref -> paymentOrderReference[0] = ref.toString());
+  // Usar paymentOrderReference[0] en tests posteriores
+  ```
+  O alternativamente, usa `.consumeWith()` para extraer el valor del response body.
+	•	Reusar ese ID con transformaciones funcionales o variables locales.
+	•	⚠️ IMPORTANTE - IBANs en tests:
+	  - Los IBANs en los payloads de test DEBEN cumplir con `minLength: 15` definido en `openapi.yaml`.
+	  - Ejemplo CORRECTO: `"EC123456789012345678"` (al menos 15 caracteres).
+	  - Ejemplo INCORRECTO: `"EC12DEBTOR"` (solo 10 caracteres, causará error de validación).
+	•	⚠️ IMPORTANTE - Fechas en tests:
+	  - Asegúrate de que las fechas en los assertions coincidan EXACTAMENTE con las fechas en los request payloads.
+	  - Si el request usa `"requestedExecutionDate": "2025-12-31"`, el assertion debe esperar `"2025-12-31"`, no `"2024-12-31"`.
+	  - ⚠️ CRÍTICO: Las fechas DEBEN ser FUTURAS (no en el pasado) para pasar la validación del dominio PaymentOrder.
+	    El dominio valida que `requestedExecutionDate` no esté en el pasado. Usa `LocalDate.now().plusDays(1).toString()` 
+	    en lugar de fechas fijas como "2025-10-31" que pueden estar en el pasado dependiendo de la fecha actual.
+	    Ejemplo CORRECTO: `"requestedExecutionDate": LocalDate.now().plusDays(1).toString()`
+	    Ejemplo INCORRECTO: `"requestedExecutionDate": "2025-10-31"` (puede estar en el pasado y causar error de validación)
+
+    ⸻
+
+    CRITERIO DE ÉXITO
+El comando:
+./gradlew test --no-daemon
+debe pasar COMPLETAMENTE sin fallos.
+
+⚠️ IMPORTANTE - Si los tests de integración fallan:
+- Si ves UnsupportedOperationException en PaymentOrderRepositoryAdapter, vuelve al PASO 8 y completa la implementación de persistencia.
+- Verifica que PaymentOrderEntity, PaymentOrderJpaRepository, PaymentOrderPersistenceMapper y PaymentOrderRepositoryAdapter estén completamente implementados.
+- Ejecuta ./gradlew compileJava --no-daemon para verificar que no hay errores de compilación.
+- Los tests de validación (400, 404) deberían pasar incluso sin persistencia, pero los tests de éxito (POST, GET) requieren persistencia completa.
+
+Los endpoints deben comportarse exactamente según:
+	•	La colección Postman
+	•	El contrato OpenAPI
+	•	El dominio Payment Initiation
+	•	Las reglas de validación
+
+⸻
+
+DOCUMENTACIÓN IA
+
+Después de completar este paso debes documentar:
+	•	ai/prompts.md
+Registrar este prompt y los tests de integración generados.
+	•	ai/decisions.md
+Explicar decisiones sobre:
+• uso de WebTestClient
+• casos de integración cubiertos
+• alineación con OpenAPI/Postman
+• manejo de errores y validaciones end-to-end
+
+PASO 14 – Calidad: JaCoCo, Checkstyle y SpotBugs
+-------------------------------------------------
+Prompt:
+
+En build.gradle:
+
+- Configura jacoco para generar reporte HTML y verificación de cobertura mínima (>= 85%).
+  
+- Excluir de cobertura JaCoCo:
+  - Código generado (**/generated/**)
+  - Entidades JPA (PaymentOrderEntity)
+  - Implementaciones de MapStruct (*MapperImpl.class)
+  - Clase principal (PaymentInitiationServiceApplication)
+  - Configuración (config/**)
+
+⚠️ IMPORTANTE - Si la cobertura no alcanza 85%:
+- Revisa el reporte HTML de JaCoCo para identificar qué componentes no están cubiertos.
+- Agrega tests adicionales para:
+  - PaymentOrderDomainService (si falta)
+  - GlobalExceptionHandler (si falta)
+  - PaymentOrderReferenceGenerator (si falta)
+  - PaymentOrderRepositoryAdapter (si falta)
+  - Value Objects: equals(), hashCode(), toString() (si falta)
+  - Casos edge en PaymentOrder.changeStatus() (null status, transiciones a FAILED/CANCELLED desde diferentes estados)
+- Ejecuta `./gradlew test jacocoTestReport --no-daemon` para generar el reporte y verificar qué falta cubrir.
+- Continúa agregando tests hasta que `./gradlew jacocoTestCoverageVerification --no-daemon` pase sin errores.
+  
+- Configura checkstyle apuntando a config/checkstyle/checkstyle.xml:
+  - maxWarnings: 100 (permite hasta 100 warnings por tarea antes de fallar, necesario para warnings aceptables como MagicNumber en tests, VisibilityModifier con Lombok, etc.)
+  - Excluir código generado en checkstyle.xml usando BeforeExecutionExclusionFileFilter:
+    - Patrón: "generated/.*"
+    - Patrón: ".*MapperImpl\.java$"
+  - ⚠️ CRÍTICO - Configuración del ImportOrder en checkstyle.xml:
+    ```xml
+    <module name="ImportOrder">
+        <property name="groups" value="/^java\./,javax,jakarta,org,com"/>
+        <property name="ordered" value="true"/>
+        <property name="separated" value="true"/>
+    </module>
+    ```
+    - Los grupos están separados por comas sin espacios: `/^java\./,javax,jakarta,org,com`
+    - `separated = true` requiere una línea en blanco entre grupos.
+    - Los static imports se agrupan automáticamente con su paquete base (ej: static org.assertj.* va con org.*).
+    - Para más detalles sobre el orden correcto, ver PASO 0 sección "⚠️ CRÍTICO - Orden de Imports en Checkstyle" y "⚠️ GUÍA COMPLETA - Orden de Imports (CRÍTICO)".
+  
+- Configura spotbugs con nivel de severidad alto:
+  ⚠️ IMPORTANTE: NO uses strings directamente para effort y reportLevel.
+  En su lugar, configura cada tarea individualmente:
+  
+  ```gradle
+  tasks.named('spotbugsMain') {
+      effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+      reportLevel = com.github.spotbugs.snom.Confidence.valueOf('HIGH')
+      excludeFilter = file("${rootProject.projectDir}/config/spotbugs/exclude.xml")
+  }
+  ```
+  
+  Crea config/spotbugs/exclude.xml para excluir:
+  - Código generado (com.bank.paymentinitiation.generated)
+  - Implementaciones MapStruct (*MapperImpl)
+  - Entidades JPA (PaymentOrderEntity)
+  - Clase principal (PaymentInitiationServiceApplication)
+
+- Configura el task check:
+  ```gradle
+  check {
+      dependsOn 'checkstyleMain'
+      dependsOn 'checkstyleTest'
+      dependsOn 'spotbugsMain'
+      dependsOn 'spotbugsTest'
+      dependsOn 'test'
+      dependsOn 'jacocoTestCoverageVerification'
+      finalizedBy 'jacocoTestReport'  // Ejecuta después de los tests
+  }
+  ```
+  ⚠️ NOTA: jacocoTestReport depende de test, así que se ejecuta después (finalizedBy) 
+  para evitar dependencias circulares.
+  
+  ⚠️ IMPORTANTE - Ejecutar checkstyle antes de continuar:
+  - Después de cada cambio en código, ejecuta primero:
+    ```bash
+    ./gradlew checkstyleMain checkstyleTest --no-daemon
+    ```
+  - Si hay errores de ImportOrder, corrígelos INMEDIATAMENTE antes de continuar.
+  - Solo continúa al siguiente paso cuando checkstyleMain y checkstyleTest pasen sin errores.
+
+⚠️ GUÍA COMPLETA - Orden de Imports (CRÍTICO):
+Para evitar errores de Checkstyle, SIEMPRE sigue este orden estricto:
+
+1. **Grupo java.*** (sin separación entre imports del mismo grupo):
+   ```java
+   import java.math.BigDecimal;
+   import java.time.LocalDate;
+   import java.time.LocalDateTime;
+   ```
+
+2. **Línea en blanco** (separación obligatoria)
+
+3. **Grupo jakarta.*** (o javax.*):
+   ```java
+   import jakarta.validation.Valid;
+   import jakarta.persistence.Entity;
+   ```
+
+4. **Línea en blanco** (separación obligatoria)
+
+5. **Grupo org.*** (imports normales primero):
+   ```java
+   import org.junit.jupiter.api.Test;
+   import org.springframework.web.bind.annotation.RestController;
+   ```
+
+6. **Static imports del grupo org.*** (sin línea en blanco, dentro del mismo grupo):
+   ```java
+   import static org.assertj.core.api.Assertions.assertThat;
+   import static org.mockito.Mockito.verify;
+   ```
+
+7. **Línea en blanco** (separación obligatoria)
+
+8. **Grupo com.***:
+   ```java
+   import com.bank.paymentinitiation.domain.model.PaymentOrder;
+   import com.bank.paymentinitiation.application.service.InitiatePaymentOrderService;
+   ```
+
+9. **Línea en blanco** (separación obligatoria)
+
+10. **Lombok** (si existe, generalmente al final):
+    ```java
+    import lombok.RequiredArgsConstructor;
+    import lombok.extern.slf4j.Slf4j;
+    ```
+
+Ejemplo COMPLETO y CORRECTO:
+```java
+package com.bank.paymentinitiation.adapter.in.rest;
+
+import java.time.LocalDateTime;
+
+import jakarta.validation.Valid;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RestController;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.bank.paymentinitiation.domain.model.PaymentOrder;
+import com.bank.paymentinitiation.generated.api.PaymentOrdersApi;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+```
+
+Errores COMUNES a evitar:
+- ❌ Poner jakarta.* después de org.*
+- ❌ Poner static imports después de com.*
+- ❌ No separar grupos con línea en blanco
+- ❌ Separar static imports de org.* con línea en blanco antes de com.*
+- ❌ Poner lombok entre jakarta.* y org.*
+
+No seas extremo con las reglas pero sí suficiente para que el código esté ordenado.
+
+⚠️ VERIFICACIÓN FINAL DE COBERTURA:
+Después de configurar JaCoCo, ejecuta:
+1. `./gradlew test jacocoTestReport --no-daemon` (genera reporte HTML)
+2. Revisa `build/reports/jacoco/test/html/index.html` para identificar componentes sin cobertura
+3. Si la cobertura es < 85%, agrega tests adicionales según las instrucciones del PASO 12
+4. Ejecuta `./gradlew jacocoTestCoverageVerification --no-daemon` hasta que pase
+5. Ejecuta `./gradlew check --no-daemon` para verificar todos los quality gates
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y la configuración de quality gates generada
+- ai/decisions.md: Documenta todas las correcciones manuales aplicadas (SpotBugs, Checkstyle, JaCoCo), exclusiones de código generado, y ajustes de cobertura mínima
+- ai/generations/: Opcionalmente guarda archivos de configuración generados (checkstyle.xml, exclude.xml de SpotBugs) si hubo cambios significativos
+
+
+PASO 15 – Docker y docker-compose
+---------------------------------
+Prompt:
+
+Crea un Dockerfile multi-stage para Gradle + Java 21:
+
+- Stage builder: eclipse-temurin:21-jdk-alpine
+  - Copia archivos de configuración (gradle/, gradlew, build.gradle, settings.gradle)
+  - Copia código fuente (src/, openapi/, config/)
+  - Da permisos de ejecución a gradlew (chmod +x gradlew)
+  - Compila con ./gradlew clean build -x test --no-daemon
+  - Verifica que se generó el JAR con ls -la build/libs/
+
+- Stage runtime: eclipse-temurin:21-jre-alpine
+  - Instala wget para health checks (apk add --no-cache wget)
+  - Crea usuario no-root para seguridad (addgroup/adduser spring)
+  - Copia el JAR desde builder: payment-initiation-service-0.0.1-SNAPSHOT.jar → app.jar
+  - Usa usuario no-root (USER spring:spring)
+  - Expone puerto 8080 (EXPOSE 8080)
+  - Configura HEALTHCHECK usando /actuator/health
+  - ENTRYPOINT: java -jar app.jar
+
+Crea docker-compose.yml con un servicio payment-initiation-service que:
+
+- build: context: ., dockerfile: Dockerfile
+- container_name: payment-initiation-service
+- ports: "8080:8080"
+- environment:
+  - SPRING_PROFILES_ACTIVE=docker
+  - JAVA_OPTS=-Xmx512m -Xms256m
+- healthcheck: usando wget con /actuator/health
+- restart: unless-stopped
+- networks: payment-network (bridge)
+
+⚠️ IMPORTANTE: Crea .dockerignore para excluir:
+- build/, .gradle/, out/
+- .idea/, .vscode/, *.iml
+- .git/
+- Dockerfile, docker-compose.yml
+- **/test-results/, **/reports/
+- ai/ (documentación, no necesario en runtime)
+
+No necesitas otro contenedor de DB porque H2 es embebido.
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y los archivos Docker generados
+- ai/decisions.md: Documenta decisiones sobre Dockerfile multi-stage, docker-compose.yml, y .dockerignore
+- ai/generations/: Opcionalmente guarda Dockerfile y docker-compose.yml iniciales si hubo cambios significativos
+
+
+PASO 16 – README y documentación de IA
+--------------------------------------
+Prompt:
+
+Crea README.md con:
+
+1) Descripción del proyecto (BIAN Payment Initiation / PaymentOrder, migración de SOAP a REST).
+2) Arquitectura hexagonal y estructura de paquetes.
+3) Stack técnico (Java 21, Spring Boot 3, H2, JPA, Gradle, MapStruct, OpenAPI, WebTestClient, JaCoCo, Checkstyle, SpotBugs, Docker).
+4) Cómo ejecutar:
+   - ./gradlew clean check
+   - ./gradlew bootRun
+   - docker compose up --build
+5) Cómo probar con Postman (referencia a postman_collection.json).
+6) Uso de IA (descripción de carpeta ai/, qué se ha documentado).
+
+📝 DOCUMENTACIÓN IA: Después de completar este paso, documenta en:
+- ai/prompts.md: Registra el prompt usado y el README generado
+- ai/decisions.md: Opcionalmente documenta decisiones finales sobre la estructura del README
+- Verifica que toda la documentación en ai/ está completa y actualizada
+
