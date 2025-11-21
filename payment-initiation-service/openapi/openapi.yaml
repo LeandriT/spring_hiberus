@@ -1,0 +1,478 @@
+openapi: 3.0.3
+info:
+  title: Payment Initiation - PaymentOrder API
+  description: |
+    API REST para gestión de órdenes de pago según el estándar BIAN Payment Initiation.
+    Este servicio migra la funcionalidad del servicio SOAP legacy a una arquitectura REST moderna.
+  version: 1.0.0
+  contact:
+    name: Payment Initiation Service
+    email: support@bank.com
+
+servers:
+  - url: http://localhost:8080
+    description: Servidor local de desarrollo
+
+paths:
+  /payment-initiation/payment-orders:
+    post:
+      operationId: initiatePaymentOrder
+      summary: Iniciar una nueva orden de pago
+      description: Crea e inicia una nueva orden de pago según el estándar BIAN Payment Initiation
+      tags:
+        - Payment Orders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiatePaymentOrderRequest'
+            example:
+              externalReference: "EXT-1"
+              debtorAccount:
+                iban: "EC123456789012345678"
+              creditorAccount:
+                iban: "EC987654321098765432"
+              instructedAmount:
+                amount: 150.75
+                currency: "USD"
+              remittanceInformation: "Factura 001-123"
+              requestedExecutionDate: "2025-12-31"
+      responses:
+        '201':
+          description: Orden de pago creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiatePaymentOrderResponse'
+        '400':
+          description: Solicitud inválida
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /payment-initiation/payment-orders/{paymentOrderId}:
+    get:
+      operationId: retrievePaymentOrder
+      summary: Recuperar una orden de pago completa
+      description: Obtiene todos los detalles de una orden de pago existente
+      tags:
+        - Payment Orders
+      parameters:
+        - name: paymentOrderId
+          in: path
+          required: true
+          description: Identificador único de la orden de pago
+          schema:
+            type: string
+            pattern: '^PO-[0-9]+$'
+            example: "PO-0001"
+      responses:
+        '200':
+          description: Orden de pago recuperada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievePaymentOrderResponse'
+        '404':
+          description: Orden de pago no encontrada
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+  /payment-initiation/payment-orders/{paymentOrderId}/status:
+    get:
+      operationId: retrievePaymentOrderStatus
+      summary: Recuperar el estado de una orden de pago
+      description: Obtiene únicamente el estado y última actualización de una orden de pago
+      tags:
+        - Payment Orders
+      parameters:
+        - name: paymentOrderId
+          in: path
+          required: true
+          description: Identificador único de la orden de pago
+          schema:
+            type: string
+            pattern: '^PO-[0-9]+$'
+            example: "PO-0001"
+      responses:
+        '200':
+          description: Estado de la orden de pago recuperado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentOrderStatusResponse'
+        '404':
+          description: Orden de pago no encontrada
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+
+components:
+  schemas:
+    InitiatePaymentOrderRequest:
+      type: object
+      required:
+        - externalReference
+        - debtorAccount
+        - creditorAccount
+        - instructedAmount
+        - requestedExecutionDate
+      properties:
+        externalReference:
+          type: string
+          description: Referencia externa proporcionada por el cliente
+          minLength: 1
+          maxLength: 100
+          example: "EXT-1"
+        debtorAccount:
+          $ref: '#/components/schemas/DebtorAccount'
+        creditorAccount:
+          $ref: '#/components/schemas/CreditorAccount'
+        instructedAmount:
+          $ref: '#/components/schemas/PaymentAmount'
+        remittanceInformation:
+          type: string
+          description: Información de remesa o referencia adicional
+          maxLength: 500
+          example: "Factura 001-123"
+        requestedExecutionDate:
+          type: string
+          format: date
+          description: Fecha solicitada para la ejecución del pago
+          example: "2025-12-31"
+
+    InitiatePaymentOrderResponse:
+      type: object
+      required:
+        - paymentOrderId
+        - status
+      properties:
+        paymentOrderId:
+          type: string
+          description: Identificador único de la orden de pago generado por el sistema
+          pattern: '^PO-[0-9]+$'
+          example: "PO-0001"
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+
+    RetrievePaymentOrderResponse:
+      type: object
+      required:
+        - paymentOrderId
+        - externalReference
+        - debtorAccount
+        - creditorAccount
+        - instructedAmount
+        - requestedExecutionDate
+        - status
+        - lastUpdate
+      properties:
+        paymentOrderId:
+          type: string
+          description: Identificador único de la orden de pago
+          pattern: '^PO-[0-9]+$'
+          example: "PO-0001"
+        externalReference:
+          type: string
+          description: Referencia externa proporcionada por el cliente
+          example: "EXT-1"
+        debtorAccount:
+          $ref: '#/components/schemas/DebtorAccount'
+        creditorAccount:
+          $ref: '#/components/schemas/CreditorAccount'
+        instructedAmount:
+          $ref: '#/components/schemas/PaymentAmount'
+        remittanceInformation:
+          type: string
+          description: Información de remesa o referencia adicional
+          example: "Factura 001-123"
+        requestedExecutionDate:
+          type: string
+          format: date
+          description: Fecha solicitada para la ejecución del pago
+          example: "2025-12-31"
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        lastUpdate:
+          type: string
+          format: date-time
+          description: Fecha y hora de la última actualización de la orden
+          example: "2025-10-30T16:25:30Z"
+
+    PaymentOrderStatusResponse:
+      type: object
+      required:
+        - paymentOrderId
+        - status
+        - lastUpdate
+      properties:
+        paymentOrderId:
+          type: string
+          description: Identificador único de la orden de pago
+          pattern: '^PO-[0-9]+$'
+          example: "PO-0001"
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        lastUpdate:
+          type: string
+          format: date-time
+          description: Fecha y hora de la última actualización de la orden
+          example: "2025-10-30T16:25:30Z"
+
+    DebtorAccount:
+      type: object
+      required:
+        - iban
+      properties:
+        iban:
+          type: string
+          description: IBAN de la cuenta deudora
+          minLength: 15
+          maxLength: 34
+          example: "EC123456789012345678"
+
+    CreditorAccount:
+      type: object
+      required:
+        - iban
+      properties:
+        iban:
+          type: string
+          description: IBAN de la cuenta acreedora
+          minLength: 15
+          maxLength: 34
+          example: "EC987654321098765432"
+
+    PaymentAmount:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: number
+          format: decimal
+          description: Monto de la orden de pago
+          minimum: 0.01
+          example: 150.75
+        currency:
+          type: string
+          description: Código de moneda ISO 4217
+          enum:
+            - USD
+            - EUR
+            - GBP
+            - JPY
+            - CHF
+            - CAD
+            - AUD
+            - NZD
+            - SEK
+            - NOK
+            - DKK
+            - PLN
+            - CZK
+            - HUF
+            - RON
+            - BGN
+            - HRK
+            - RUB
+            - TRY
+            - BRL
+            - MXN
+            - ZAR
+            - INR
+            - CNY
+            - HKD
+            - SGD
+            - KRW
+            - THB
+            - MYR
+            - IDR
+            - PHP
+            - CLP
+            - COP
+            - PEN
+            - ARS
+            - UYU
+            - VEF
+            - EGP
+            - ILS
+            - AED
+            - SAR
+            - QAR
+            - KWD
+            - BHD
+            - OMR
+            - JOD
+            - LBP
+            - ECS
+            - PAB
+            - GTQ
+            - HNL
+            - NIO
+            - CRC
+            - DOP
+            - BBD
+            - BZD
+            - JMD
+            - TTD
+            - BMD
+            - BSD
+            - BOB
+            - PYG
+            - UYU
+            - VES
+            - VND
+            - KHR
+            - LAK
+            - MOP
+            - TWD
+            - FJD
+            - PGK
+            - SBD
+            - VUV
+            - WST
+            - XPF
+            - TOP
+            - SZL
+            - LSL
+            - BWP
+            - ZMW
+            - MZN
+            - AOA
+            - ETB
+            - TZS
+            - UGX
+            - RWF
+            - BIF
+            - DJF
+            - ERN
+            - SOS
+            - KES
+            - MGA
+            - MUR
+            - SCR
+            - KMF
+            - KYD
+            - AWG
+            - ANG
+            - SRD
+            - GYD
+            - BND
+            - BTN
+            - NPR
+            - PKR
+            - AFN
+            - IRR
+            - IQD
+            - SYP
+            - YER
+            - OMR
+            - BHD
+            - KWD
+            - QAR
+            - AED
+            - SAR
+            - JOD
+            - LBP
+            - ILS
+            - EGP
+            - SDG
+            - SSP
+            - ETB
+            - ERN
+            - DJF
+            - SOS
+            - KES
+            - UGX
+            - TZS
+            - RWF
+            - BIF
+            - MGA
+            - MUR
+            - SCR
+            - KMF
+            - KYD
+            - AWG
+            - ANG
+            - SRD
+            - GYD
+            - BND
+            - BTN
+            - NPR
+            - PKR
+            - AFN
+            - IRR
+            - IQD
+            - SYP
+            - YER
+          example: "USD"
+
+    PaymentStatus:
+      type: string
+      description: Estado de la orden de pago según el estándar BIAN
+      enum:
+        - INITIATED
+        - PENDING
+        - PROCESSED
+        - COMPLETED
+        - FAILED
+        - CANCELLED
+      example: "INITIATED"
+
+    ProblemDetail:
+      type: object
+      description: Detalle del problema según RFC 7807
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Tipo de problema (URI de referencia)
+          example: "about:blank"
+        title:
+          type: string
+          description: Título breve del problema
+          example: "Payment Order Not Found"
+        status:
+          type: integer
+          format: int32
+          description: Código de estado HTTP
+          example: 404
+        detail:
+          type: string
+          description: Descripción detallada del problema
+          example: "Payment order with id PO-9999 was not found"
+        instance:
+          type: string
+          format: uri
+          description: URI específica que causó el problema
+          example: "/payment-initiation/payment-orders/PO-9999"
+
